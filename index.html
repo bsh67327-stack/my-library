@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-title" content="내 서재">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <!-- ===== 상단: 제목, 통계, 검색/필터 ===== -->
@@ -28,7 +28,13 @@
     </div>
     <p id="stats" class="stats"></p>
 
-    <div class="toolbar">
+    <!-- 서재 / 캘린더 화면 전환 -->
+    <div class="view-tabs" id="viewTabs">
+      <button data-view="library" class="active">📚 서재</button>
+      <button data-view="calendar">📅 캘린더</button>
+    </div>
+
+    <div class="toolbar" id="toolbar">
       <input type="search" id="search" placeholder="제목 · 작가 · 한줄평 검색">
       <div class="tabs" id="typeTabs">
         <button data-type="all" class="active">전체</button>
@@ -56,8 +62,25 @@
 
   <!-- ===== 서재 (작품 카드 목록) ===== -->
   <main>
-    <div id="grid" class="grid"></div>
-    <p id="empty" class="empty" hidden></p>
+    <section id="libraryView">
+      <div id="grid" class="grid"></div>
+      <p id="empty" class="empty" hidden></p>
+    </section>
+
+    <!-- ===== 캘린더 (작품을 추가한 날짜에 표지 표시) ===== -->
+    <section id="calendarView" hidden>
+      <div class="cal-head">
+        <button type="button" id="calPrev" class="ghost" aria-label="이전 달">‹</button>
+        <h2 id="calTitle"></h2>
+        <button type="button" id="calNext" class="ghost" aria-label="다음 달">›</button>
+      </div>
+      <p id="calSummary" class="cal-summary"></p>
+      <div class="cal-week">
+        <span class="sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="sat">토</span>
+      </div>
+      <div id="calGrid" class="cal-grid"></div>
+      <div id="calDayList"></div>
+    </section>
   </main>
 
   <button id="addBtn" class="fab" aria-label="작품 추가">＋</button>
@@ -172,6 +195,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

@@ -27,6 +27,8 @@
 }
 
 * { box-sizing: border-box; }
+/* hidden 속성이 붙은 요소는 display 설정과 상관없이 항상 숨김 */
+[hidden] { display: none !important; }
 body {
   margin: 0;
   font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
@@ -82,6 +84,52 @@ button { cursor: pointer; border-radius: 8px; padding: 8px 14px; border: 1px sol
   background: var(--accent); color: var(--accent-text);
   font-size: 1.8rem; line-height: 1; box-shadow: var(--shadow);
 }
+
+/* ===== 서재 / 캘린더 전환 탭 ===== */
+.view-tabs {
+  display: flex; gap: 4px; margin-bottom: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 3px;
+}
+.view-tabs button { flex: 1; background: none; padding: 7px; font-weight: 600; color: var(--muted); }
+.view-tabs button.active { background: var(--accent); color: var(--accent-text); }
+
+/* ===== 캘린더 ===== */
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cal-head h2 { margin: 0; font-size: 1.2rem; }
+.cal-head button { font-size: 1.3rem; padding: 4px 16px; line-height: 1.2; }
+.cal-summary { text-align: center; color: var(--muted); font-size: 0.88rem; margin: 6px 0 12px; }
+
+.cal-week, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-week { margin-bottom: 4px; text-align: center; font-size: 0.78rem; color: var(--muted); }
+.cal-week .sun { color: var(--danger); }
+.cal-week .sat { color: #3b7ddd; }
+
+.cal-cell {
+  position: relative; overflow: hidden;
+  aspect-ratio: 3 / 4; padding: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.cal-cell.blank { visibility: hidden; }
+.cal-cell.today { border: 2px solid var(--accent); }
+.cal-cell.selected { outline: 3px solid var(--accent); outline-offset: 1px; }
+.cal-cell img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cal-fallback {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 2px; font-size: 0.62rem; font-weight: 700; color: #fff; word-break: keep-all;
+  background: linear-gradient(135deg, var(--accent), #b39dff);
+}
+.cal-day {
+  position: absolute; top: 3px; left: 5px; z-index: 1;
+  font-size: 0.75rem; font-weight: 600; color: var(--text);
+}
+.cal-cell.has .cal-day { color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
+.cal-more {
+  position: absolute; right: 3px; bottom: 3px; z-index: 1;
+  font-size: 0.65rem; font-weight: 700; padding: 1px 5px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65); color: #fff;
+}
+.cal-day-title { font-size: 1rem; margin: 20px 0 10px; }
 
 /* ===== 서재 카드 ===== */
 main { padding: 16px 16px 96px; }

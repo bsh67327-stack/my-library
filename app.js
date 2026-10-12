@@ -9,8 +9,12 @@ const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', drop
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
 
-// 화면 상태: 지금 어떤 필터/정렬을 보고 있는지
-const view = { type: 'all', status: 'all', sort: 'updated', query: '' };
+// 화면 상태: 서재/캘린더 중 어떤 화면인지, 어떤 필터/정렬을 보고 있는지
+const view = { mode: 'library', type: 'all', status: 'all', sort: 'updated', query: '' };
+
+// 캘린더 상태: 보고 있는 연도/달(0=1월), 선택한 날짜('YYYY-MM-DD')
+const now = new Date();
+const cal = { year: now.getFullYear(), month: now.getMonth(), selected: null };
 
 let works = [];         // 저장된 모든 작품
 let editingId = null;   // 수정 중인 작품 id (새로 추가할 땐 null)
@@ -118,7 +122,22 @@ function render() {
   list.sort(sorters[view.sort]);
 
   // (3) 카드 만들기
-  $('grid').innerHTML = list.map((w) => `
+  $('grid').innerHTML = list.map(cardHTML).join('');
+
+  // (4) 비어 있을 때 안내 문구
+  const empty = $('empty');
+  empty.hidden = list.length > 0;
+  empty.innerHTML = works.length === 0
+    ? '아직 기록한 작품이 없어요.<br>오른쪽 아래 <b>＋</b> 버튼으로 첫 작품을 추가해 보세요!'
+    : '조건에 맞는 작품이 없어요.';
+
+  renderStats();
+  if (view.mode === 'calendar') renderCalendar();
+}
+
+// 작품 카드 하나 (서재와 캘린더에서 같이 씀)
+function cardHTML(w) {
+  return `
     <article class="card" data-id="${esc(w.id)}">
       <div class="cover">
         <span class="cover-fallback">${esc(w.title)}</span>
@@ -133,17 +152,7 @@ function render() {
         ${progressHTML(w)}
         ${w.review ? `<p class="review">“${esc(w.review)}”</p>` : ''}
       </div>
-    </article>
-  `).join('');
-
-  // (4) 비어 있을 때 안내 문구
-  const empty = $('empty');
-  empty.hidden = list.length > 0;
-  empty.innerHTML = works.length === 0
-    ? '아직 기록한 작품이 없어요.<br>오른쪽 아래 <b>＋</b> 버튼으로 첫 작품을 추가해 보세요!'
-    : '조건에 맞는 작품이 없어요.';
-
-  renderStats();
+    </article>`;
 }
 
 // 카드의 "📖 32 / 189화" 줄과 "안 본 157화" 표시
@@ -165,6 +174,90 @@ function renderStats() {
   const rated = works.filter((w) => w.rating > 0);
   const avg = rated.length ? (rated.reduce((s, w) => s + w.rating, 0) / rated.length).toFixed(1) : '-';
   $('stats').textContent = `전체 ${works.length}작품 · 완독 ${done} · 평균 평점 ★ ${avg}`;
+}
+
+
+// ----- 4-2. 캘린더 화면 그리기 -----
+
+// 시간(숫자) → 'YYYY-MM-DD' (내 폰 시간대 기준)
+function dateKey(time) {
+  return new Date(time).toLocaleDateString('sv-SE');
+}
+
+function renderCalendar() {
+  const { year, month } = cal;
+  const pad = (n) => String(n).padStart(2, '0');
+  $('calTitle').textContent = `${year}년 ${month + 1}월`;
+
+  // 작품을 추가한 날짜별로 묶기
+  const byDay = {};
+  for (const w of works) {
+    const key = dateKey(w.createdAt);
+    (byDay[key] = byDay[key] || []).push(w);
+  }
+
+  const startWeekday = new Date(year, month, 1).getDay(); // 1일이 무슨 요일인지 (0=일요일)
+  const lastDate = new Date(year, month + 1, 0).getDate(); // 이번 달 마지막 날
+  const today = dateKey(Date.now());
+  let monthCount = 0;
+  let html = '<div class="cal-cell blank"></div>'.repeat(startWeekday);
+
+  for (let d = 1; d <= lastDate; d++) {
+    const key = `${year}-${pad(month + 1)}-${pad(d)}`;
+    const list = (byDay[key] || []).sort((a, b) => a.createdAt - b.createdAt);
+    monthCount += list.length;
+    const first = list[0];
+    const classes = ['cal-cell', list.length && 'has', key === today && 'today', key === cal.selected && 'selected']
+      .filter(Boolean).join(' ');
+    html += `
+      <button type="button" class="${classes}" data-date="${key}">
+        <span class="cal-day">${d}</span>
+        ${first ? `
+          <span class="cal-fallback">${esc(first.title)}</span>
+          ${first.cover ? `<img src="${esc(first.cover)}" alt="${esc(first.title)}" loading="lazy" onerror="this.remove()">` : ''}` : ''}
+        ${list.length > 1 ? `<span class="cal-more">+${list.length - 1}</span>` : ''}
+      </button>`;
+  }
+  $('calGrid').innerHTML = html;
+  $('calSummary').textContent = monthCount
+    ? `이번 달에 추가한 작품 ${monthCount}개`
+    : '이번 달에 추가한 작품이 없어요';
+
+  // 선택한 날짜의 작품 목록
+  const picked = cal.selected && byDay[cal.selected];
+  if (picked && cal.selected.startsWith(`${year}-${pad(month + 1)}`)) {
+    const [, m, d] = cal.selected.split('-').map(Number);
+    $('calDayList').innerHTML = `
+      <h3 class="cal-day-title">${m}월 ${d}일에 추가한 작품 ${picked.length}개</h3>
+      <div class="grid">${picked.map(cardHTML).join('')}</div>`;
+  } else {
+    $('calDayList').innerHTML = '';
+  }
+}
+
+function moveMonth(diff) {
+  const d = new Date(cal.year, cal.month + diff, 1);
+  cal.year = d.getFullYear();
+  cal.month = d.getMonth();
+  cal.selected = null;
+  renderCalendar();
+}
+
+// 서재 ↔ 캘린더 전환
+function setViewMode(mode) {
+  view.mode = mode;
+  document.querySelectorAll('#viewTabs button')
+    .forEach((b) => b.classList.toggle('active', b.dataset.view === mode));
+  $('libraryView').hidden = mode !== 'library';
+  $('toolbar').hidden = mode !== 'library';
+  $('calendarView').hidden = mode !== 'calendar';
+  if (mode === 'calendar') {
+    // 오늘 추가한 작품이 있으면 오늘을 선택해서 보여줌
+    const today = dateKey(Date.now());
+    if (!cal.selected && works.some((w) => dateKey(w.createdAt) === today)) cal.selected = today;
+    renderCalendar();
+  }
+  window.scrollTo(0, 0);
 }
 
 
@@ -563,11 +656,40 @@ function bindEvents() {
   $('search').addEventListener('input', (e) => { view.query = e.target.value; render(); });
 
   // 카드 누르면 수정 창 열기
-  $('grid').addEventListener('click', (e) => {
+  const onCardClick = (e) => {
     const plus = e.target.closest('.plus-btn');
     if (plus) { addProgress(plus.dataset.id); return; }
     const card = e.target.closest('.card');
     if (card) openEditor(works.find((w) => w.id === card.dataset.id));
+  };
+  $('grid').addEventListener('click', onCardClick);
+  $('calDayList').addEventListener('click', onCardClick);
+
+  // 서재 / 캘린더 전환
+  $('viewTabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (btn) setViewMode(btn.dataset.view);
+  });
+
+  // 캘린더: 날짜 누르면 그날 작품 보기 (한 번 더 누르면 닫기)
+  $('calGrid').addEventListener('click', (e) => {
+    const cell = e.target.closest('.cal-cell.has');
+    if (!cell) return;
+    cal.selected = cal.selected === cell.dataset.date ? null : cell.dataset.date;
+    renderCalendar();
+    if (cal.selected) $('calDayList').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+  $('calPrev').addEventListener('click', () => moveMonth(-1));
+  $('calNext').addEventListener('click', () => moveMonth(1));
+
+  // 캘린더: 좌우로 밀어서 달 넘기기
+  let touchX = null;
+  $('calGrid').addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+  $('calGrid').addEventListener('touchend', (e) => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    touchX = null;
+    if (Math.abs(dx) > 60) moveMonth(dx < 0 ? 1 : -1);
   });
   $('addBtn').addEventListener('click', () => openEditor(null));
 
