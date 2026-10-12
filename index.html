@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>내 서재</title>
+  <meta name="theme-color" content="#6c5ce7">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <!-- 아이폰 홈 화면용 설정 -->
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="내 서재">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ===== 상단: 제목, 통계, 검색/필터 ===== -->
+  <header class="top">
+    <div class="top-row">
+      <h1>📚 내 서재</h1>
+      <div class="top-actions">
+        <button id="exportBtn" class="ghost" title="기록을 파일로 저장">백업</button>
+        <button id="importBtn" class="ghost" title="백업 파일 불러오기">복원</button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </div>
+    </div>
+    <p id="stats" class="stats"></p>
+
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="제목 · 작가 · 한줄평 검색">
+      <div class="tabs" id="typeTabs">
+        <button data-type="all" class="active">전체</button>
+        <button data-type="webtoon">웹툰</button>
+        <button data-type="webnovel">웹소설</button>
+        <button data-type="comic">만화책</button>
+      </div>
+      <div class="selects">
+        <select id="statusFilter" aria-label="상태 필터">
+          <option value="all">모든 상태</option>
+          <option value="reading">보는 중</option>
+          <option value="done">완독</option>
+          <option value="paused">보류</option>
+          <option value="dropped">하차</option>
+        </select>
+        <select id="sortSelect" aria-label="정렬">
+          <option value="updated">최근 수정순</option>
+          <option value="created">최근 등록순</option>
+          <option value="rating">평점 높은순</option>
+          <option value="title">제목순</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== 서재 (작품 카드 목록) ===== -->
+  <main>
+    <div id="grid" class="grid"></div>
+    <p id="empty" class="empty" hidden></p>
+  </main>
+
+  <button id="addBtn" class="fab" aria-label="작품 추가">＋</button>
+
+  <!-- ===== 작품 추가/수정 창 ===== -->
+  <dialog id="editor">
+    <form id="workForm">
+      <h2 id="editorTitle">작품 추가</h2>
+
+      <div class="cover-field">
+        <div id="coverPreview" class="cover-preview"><span>표지 없음</span></div>
+        <div class="cover-inputs">
+          <label class="file-btn">사진 고르기
+            <input type="file" id="coverFile" accept="image/*" hidden>
+          </label>
+          <input type="url" id="coverUrl" placeholder="또는 이미지 주소 붙여넣기">
+          <button type="button" id="coverClear" class="link">표지 지우기</button>
+        </div>
+      </div>
+
+      <label>제목 *
+        <input id="f-title" required maxlength="100" autocomplete="off">
+      </label>
+
+      <div class="row">
+        <label>종류
+          <select id="f-type">
+            <option value="webtoon">웹툰</option>
+            <option value="webnovel">웹소설</option>
+            <option value="comic">만화책</option>
+          </select>
+        </label>
+        <label>상태
+          <select id="f-status">
+            <option value="reading">보는 중</option>
+            <option value="done">완독</option>
+            <option value="paused">보류</option>
+            <option value="dropped">하차</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row">
+        <label>작가
+          <input id="f-author" maxlength="50" autocomplete="off">
+        </label>
+        <label>플랫폼
+          <input id="f-platform" list="platforms" maxlength="30" autocomplete="off">
+        </label>
+      </div>
+      <datalist id="platforms">
+        <option value="네이버웹툰"><option value="카카오웹툰"><option value="카카오페이지">
+        <option value="네이버 시리즈"><option value="리디"><option value="레진코믹스">
+        <option value="문피아"><option value="노벨피아"><option value="종이책">
+      </datalist>
+
+      <div class="field">
+        <span class="field-label">평점 <small>(별의 왼쪽 절반을 누르면 0.5점)</small></span>
+        <div class="rating-input">
+          <div id="ratingStars" class="stars big"></div>
+          <span id="ratingValue" class="rating-value">-</span>
+          <button type="button" id="ratingClear" class="link">지우기</button>
+        </div>
+      </div>
+
+      <label>한줄평
+        <input id="f-review" maxlength="100" placeholder="이 작품을 한 줄로 표현하면?">
+      </label>
+
+      <div class="row">
+        <label>보기 시작한 날
+          <input type="date" id="f-started">
+        </label>
+        <label>다 본 날
+          <input type="date" id="f-finished">
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" id="deleteBtn" class="danger">삭제</button>
+        <span class="spacer"></span>
+        <button type="button" id="cancelBtn" class="ghost">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
