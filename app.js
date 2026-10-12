@@ -3,11 +3,11 @@
 // =====================================================
 
 // ----- 1. 기본 설정 -----
-const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책' };
+const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', manga: '일본만화' };
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (화면 맨 위 통계 줄 끝에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 10;
+const APP_VERSION = 12;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -66,9 +66,15 @@ function esc(text) {
   ));
 }
 
-// 만화책은 '권', 웹툰/웹소설은 '화'
-function unitOf(type) {
-  return type === 'comic' ? '권' : '화';
+// 회차 단위: 플랫폼이 알려준 단위(unit)가 있으면 그걸 쓰고, 없으면 만화책은 '권', 나머지는 '화'
+function unitOf(type, unit) {
+  return unit || (type === 'comic' ? '권' : '화');
+}
+
+// 작가 이름이 모두 "Koyoharu Gotouge"처럼 두 단어 이상의 영문이면 일본 만화로 추정
+// ("SIU", "ARCHE"처럼 한 단어 영문 필명은 한국 웹툰에도 많아서 제외)
+function looksJapaneseAuthor(names) {
+  return names.length > 0 && names.every((n) => /^[A-Za-z.'\-]+( [A-Za-z.'\-]+)+$/.test(n.trim()));
 }
 
 function newId() {
@@ -167,6 +173,7 @@ const PLATFORM_BADGES = [
   { match: /카카오|kakao/i, label: '카카오', cls: 'kakao' },
   { match: /리디|ridi/i, label: '리디', cls: 'ridi' },
   { match: /레진|lezhin/i, label: '레진', cls: 'lezhin' },
+  { match: /미스터블루|mrblue/i, label: '미블', cls: 'mrblue' },
 ];
 
 function platformBadge(platform) {
@@ -177,7 +184,7 @@ function platformBadge(platform) {
 // 카드의 "📖 32 / 189화" 줄과 "안 본 157화" 표시
 function progressHTML(w) {
   if (!w.progress && !w.latest && w.status !== 'reading') return '';
-  const unit = unitOf(w.type);
+  const unit = unitOf(w.type, w.unit);
   const seen = w.progress || 0;
   const left = w.latest ? w.latest - seen : 0;
   return `
@@ -295,7 +302,7 @@ function openEditor(work) {
   $('f-review').value = work?.review || '';
   $('f-progress').value = work?.progress || '';
   formLink = work?.source
-    ? { source: work.source, sourceId: work.sourceId, latest: work.latest, latestFinished: work.latestFinished }
+    ? { source: work.source, sourceId: work.sourceId, latest: work.latest, latestFinished: work.latestFinished, unit: work.unit }
     : null;
   updateProgressHint();
   $('f-started').value = work?.startedAt || '';
@@ -352,6 +359,7 @@ async function handleSubmit(e) {
     sourceId: formLink?.sourceId || '',
     latest: formLink?.latest || 0,
     latestFinished: !!formLink?.latestFinished,
+    unit: formLink?.unit || '',
     // 회차 수를 아직 모르면 0으로 둬서 다음에 앱을 열 때 바로 확인하게 함
     latestCheckedAt: formLink?.latest ? (old?.sourceId === formLink.sourceId ? old.latestCheckedAt : now) : 0,
   };
@@ -405,15 +413,25 @@ function parseSeries(html, kind) {
     const count = text.match(/\(총\s*([\d,]+)\s*(화|권)\s*\/\s*(미완결|완결)\)/);
     const unit = count ? count[2] : '';
     const img = li.querySelector('img');
+    // 같은 이름이 두 번 나오는 경우가 많아서(글/그림 작가) 중복 제거
+    const authors = [...new Set([...li.querySelectorAll('.author')].map((a) => a.textContent.trim()))];
+
+    // 종류 판단: 웹소설 → 웹소설 / 작가가 영문 이름 → 일본만화 / 권 단위·[단행본] → 만화책 / 나머지 → 웹툰
+    let type = 'webtoon';
+    if (kind === 'novel') type = 'webnovel';
+    else if (looksJapaneseAuthor(authors)) type = 'manga';
+    else if (unit === '권' || /\[단행본\]/.test(text)) type = 'comic';
+
     return {
       sourceId: link.getAttribute('href').match(/productNo=(\d+)/)[1],
       title: text.replace(/\s*\(총[^)]*\)\s*$/, '').replace(/\s*\[독점\]/, '').trim(),
-      author: [...li.querySelectorAll('.author')].map((a) => a.textContent.trim()).join(', '),
+      author: authors.join(', '),
       cover: img ? img.getAttribute('src').replace(/\?type=.*$/, '?type=m260') : '',
-      type: kind === 'novel' ? 'webnovel' : unit === '권' ? 'comic' : 'webtoon',
+      type,
+      unit,
       latest: count ? Number(count[1].replace(/,/g, '')) : 0,
       finished: count ? count[3] === '완결' : false,
-      note: kind === 'novel' ? '웹소설' : unit === '권' ? '만화책' : '웹툰',
+      note: TYPES[type],
     };
   }).filter(Boolean);
 }
@@ -424,6 +442,34 @@ const seriesSource = (kind) => ({
   parse: (html) => parseSeries(html, kind),
   hasMore: (html, page, items) => items.length >= 25, // 한 페이지에 25개씩
 });
+
+// 미스터블루: 검색 결과 웹페이지에서 작품 정보를 꺼냄
+function parseMrblue(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return [...doc.querySelectorAll('li[data-pid]')].map((li) => {
+    const link = li.querySelector('.tit a');
+    if (!link) return null;
+    const category = li.querySelector('.label-category')?.textContent.trim() || ''; // 웹툰 / 만화 / 소설
+    // 제목 링크 안에 [만화] 표시가 같이 있어서 글자 부분만 꺼냄
+    const title = [...link.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE)
+      .map((n) => n.textContent).join('').replace(/\s+/g, ' ').trim();
+    const info = (li.querySelector('.info')?.textContent || '').replace(/\s+/g, ' '); // 예: "2026.10.01 730화 연재 대원씨아이"
+    const count = info.match(/([\d,]+)\s*(화|권)/);
+    const authors = [...new Set([...li.querySelectorAll('.authorname')].map((a) => a.textContent.trim()))];
+    const img = li.querySelector('img');
+    return {
+      sourceId: li.dataset.pid,
+      title,
+      author: authors.join(', '),
+      cover: img ? (img.getAttribute('data-original') || img.getAttribute('src') || '') : '',
+      type: category === '소설' ? 'webnovel' : category === '웹툰' ? 'webtoon' : 'comic',
+      unit: count ? count[2] : '',
+      latest: count ? Number(count[1].replace(/,/g, '')) : 0,
+      finished: /완결/.test(info),
+      note: category,
+    };
+  }).filter(Boolean);
+}
 
 // 네이버웹툰 / 베스트도전 / 도전만화는 결과 모양이 같아서 하나로 처리
 const naverSource = (platform) => ({
@@ -447,6 +493,12 @@ const SEARCH_SOURCES = {
   naverChallenge: naverSource('네이버 도전만화'),
   seriesNovel: seriesSource('novel'),
   seriesComic: seriesSource('comic'),
+  mrblue: {
+    platform: '미스터블루',
+    format: 'html',
+    parse: parseMrblue,
+    hasMore: (html, page, items) => items.length >= 120, // 한 페이지에 120개씩
+  },
   kakaoWebtoon: {
     platform: '카카오웹툰',
     parse: (data) => (data.data?.content || []).map((c) => ({
@@ -500,7 +552,8 @@ const SEARCH_SOURCES = {
       title: s.title,
       author: s.authors,
       cover: `https://page-images.kakaoentcdn.com/download/resource?kid=${s.thumbnail}&filename=th3`,
-      type: s.operator_property?.is_manga ? 'comic' : s.category === '웹툰' ? 'webtoon' : 'webnovel',
+      // 카카오페이지가 일본 만화로 표시한 작품(is_manga)은 일본만화로
+      type: s.operator_property?.is_manga ? 'manga' : s.category === '웹툰' ? 'webtoon' : 'webnovel',
       latest: 0, // 검색 결과에는 회차 수가 없어서 fetchLatest로 따로 불러옴
       finished: false,
       note: s.category || '',
@@ -594,7 +647,7 @@ function renderSearchResults() {
     return;
   }
   box.innerHTML = searchResults.map((r, i) => {
-    const count = r.latest ? `${r.latest}${unitOf(r.type)}${r.finished ? ' 완결' : ''}` : '';
+    const count = r.latest ? `${r.latest}${unitOf(r.type, r.unit)}${r.finished ? ' 완결' : ''}` : '';
     return `
       <button type="button" class="s-item" data-i="${i}">
         <img src="${esc(r.cover)}" alt="" loading="lazy"${/^#[0-9a-f]{3,8}$/i.test(r.coverBg || '') ? ` style="background:${r.coverBg}"` : ''}>
@@ -613,7 +666,7 @@ function pickResult(r) {
   $('f-platform').value = SEARCH_SOURCES[r.source].platform;
   $('coverUrl').value = r.cover;
   setFormCover(r.cover);
-  const link = { source: r.source, sourceId: r.sourceId, latest: r.latest, latestFinished: r.finished };
+  const link = { source: r.source, sourceId: r.sourceId, latest: r.latest, latestFinished: r.finished, unit: r.unit || '' };
   formLink = link;
   updateProgressHint();
 
@@ -640,7 +693,7 @@ function pickResult(r) {
 // 최신 회차를 알면 1화~최신화 목록에서 고르고, 모르면 숫자 입력칸을 보여줌
 // (실제 값은 항상 숫자 입력칸 f-progress에 저장됨 - 목록은 그걸 보여주는 역할)
 function updateProgressHint() {
-  const unit = unitOf($('f-type').value);
+  const unit = unitOf($('f-type').value, formLink?.unit);
   const latest = formLink?.latest || 0;
   const current = Math.max(0, Math.floor(Number($('f-progress').value) || 0));
   const select = $('f-progress-select');
