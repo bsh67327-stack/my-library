@@ -142,7 +142,10 @@ function cardHTML(w) {
       <div class="cover">
         <span class="cover-fallback">${esc(w.title)}</span>
         ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
-        <span class="badge">${TYPES[w.type]}</span>
+        <div class="badges">
+          <span class="badge">${TYPES[w.type]}</span>
+          ${platformBadge(w.platform)}
+        </div>
       </div>
       <div class="info">
         <div class="stars small">${starsHTML(w.rating)}</div>
@@ -153,6 +156,19 @@ function cardHTML(w) {
         ${w.review ? `<p class="review">“${esc(w.review)}”</p>` : ''}
       </div>
     </article>`;
+}
+
+// 표지 왼쪽 위 플랫폼 표시 (플랫폼 이름에 들어간 글자로 판단)
+const PLATFORM_BADGES = [
+  { match: /네이버|naver/i, label: '네이버', cls: 'naver' },
+  { match: /카카오|kakao/i, label: '카카오', cls: 'kakao' },
+  { match: /리디|ridi/i, label: '리디', cls: 'ridi' },
+  { match: /레진|lezhin/i, label: '레진', cls: 'lezhin' },
+];
+
+function platformBadge(platform) {
+  const found = PLATFORM_BADGES.find((p) => p.match.test(platform || ''));
+  return found ? `<span class="badge pf-${found.cls}">${found.label}</span>` : '';
 }
 
 // 카드의 "📖 32 / 189화" 줄과 "안 본 157화" 표시
