@@ -1,4 +1,4 @@
-// =====================================================
+﻿// =====================================================
 // 내 서재 - 웹툰/웹소설/만화책 기록 앱
 // =====================================================
 
@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책' };
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (화면 맨 위 통계 줄 끝에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 9;
+const APP_VERSION = 10;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -393,6 +393,38 @@ async function handleDelete() {
 // 플랫폼마다 결과 모양이 달라서, 같은 모양으로 바꿔줌
 // { sourceId(플랫폼의 작품 번호), title, author, cover, type, latest(현재 회차 수), finished(완결), note }
 
+// 네이버 시리즈: 검색 결과 웹페이지에서 작품 정보를 꺼냄
+// kind = 'novel'(웹소설) 또는 'comic'(만화 - 웹툰과 만화책이 섞여 있음)
+function parseSeries(html, kind) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return [...doc.querySelectorAll('.lst_list li')].map((li) => {
+    const link = li.querySelector('h3 a[href*="productNo="]');
+    if (!link) return null;
+    // 제목 예: "화산귀환[독점] (총 189화/미완결)"
+    const text = link.textContent.replace(/\s+/g, ' ').trim();
+    const count = text.match(/\(총\s*([\d,]+)\s*(화|권)\s*\/\s*(미완결|완결)\)/);
+    const unit = count ? count[2] : '';
+    const img = li.querySelector('img');
+    return {
+      sourceId: link.getAttribute('href').match(/productNo=(\d+)/)[1],
+      title: text.replace(/\s*\(총[^)]*\)\s*$/, '').replace(/\s*\[독점\]/, '').trim(),
+      author: [...li.querySelectorAll('.author')].map((a) => a.textContent.trim()).join(', '),
+      cover: img ? img.getAttribute('src').replace(/\?type=.*$/, '?type=m260') : '',
+      type: kind === 'novel' ? 'webnovel' : unit === '권' ? 'comic' : 'webtoon',
+      latest: count ? Number(count[1].replace(/,/g, '')) : 0,
+      finished: count ? count[3] === '완결' : false,
+      note: kind === 'novel' ? '웹소설' : unit === '권' ? '만화책' : '웹툰',
+    };
+  }).filter(Boolean);
+}
+
+const seriesSource = (kind) => ({
+  platform: '네이버 시리즈',
+  format: 'html',
+  parse: (html) => parseSeries(html, kind),
+  hasMore: (html, page, items) => items.length >= 25, // 한 페이지에 25개씩
+});
+
 // 네이버웹툰 / 베스트도전 / 도전만화는 결과 모양이 같아서 하나로 처리
 const naverSource = (platform) => ({
   platform,
@@ -413,6 +445,37 @@ const SEARCH_SOURCES = {
   naverWebtoon: naverSource('네이버웹툰'),
   naverBest: naverSource('네이버 베스트도전'),
   naverChallenge: naverSource('네이버 도전만화'),
+  seriesNovel: seriesSource('novel'),
+  seriesComic: seriesSource('comic'),
+  kakaoWebtoon: {
+    platform: '카카오웹툰',
+    parse: (data) => (data.data?.content || []).map((c) => ({
+      sourceId: c.id,
+      title: c.title,
+      author: (c.authors || []).filter((a) => a.type !== 'PUBLISHER').map((a) => a.name).join(', '),
+      // 검색 목록에서는 캐릭터 그림 + 배경색으로 보여주고, 고르면 대표 이미지로 바꿈
+      cover: c.featuredCharacterImageA ? `${c.featuredCharacterImageA}.png` : '',
+      coverBg: c.backgroundColor || '',
+      type: 'webtoon',
+      latest: 0,
+      finished: false,
+      note: c.genre || '',
+    })),
+    hasMore: (data) => data.meta?.pagination ? !data.meta.pagination.last : false,
+    // 작품 정보(대표 이미지)와 최신 회차를 함께 불러옴
+    fetchLatest: async (id) => {
+      const [info, episodes] = await Promise.all([
+        callServer('kakaoWebtoonInfo', String(id)),
+        callServer('kakaoWebtoonEpisodes', String(id)),
+      ]);
+      const share = info.data?.sharingThumbnailImage;
+      return {
+        latest: episodes.data?.episodes?.[0]?.no || 0,
+        finished: false,
+        cover: share ? `${share}.jpg` : '',
+      };
+    },
+  },
   ridi: {
     platform: '리디',
     parse: (data) => (data.books || []).map((b) => {
@@ -450,18 +513,19 @@ const SEARCH_SOURCES = {
   },
 };
 
-// 검색 서버에 요청 보내기 (page는 0부터 시작)
-async function callServer(source, q, page = 0) {
+// 검색 서버에 요청 보내기 (page는 0부터 시작, asText = 결과를 글자 그대로 받기)
+async function callServer(source, q, page = 0, asText = false) {
   const res = await fetch(`${SEARCH_SERVER}?source=${source}&q=${encodeURIComponent(q.slice(0, 50))}&page=${page}`);
   if (!res.ok) throw new Error(`서버 응답 ${res.status}`);
-  return res.json();
+  return asText ? res.text() : res.json();
 }
 
 // 검색해서 { items: 같은 모양으로 바꾼 결과, hasMore: 다음 페이지가 있는지 } 돌려줌
 async function fetchSearch(sourceKey, q, page = 0) {
   const src = SEARCH_SOURCES[sourceKey];
-  const data = await callServer(sourceKey, q, page);
-  return { items: src.parse(data), hasMore: src.hasMore(data, page) };
+  const data = await callServer(sourceKey, q, page, src.format === 'html');
+  const items = src.parse(data);
+  return { items, hasMore: src.hasMore(data, page, items) };
 }
 
 // 저장된 작품의 최신 회차 확인
@@ -533,7 +597,7 @@ function renderSearchResults() {
     const count = r.latest ? `${r.latest}${unitOf(r.type)}${r.finished ? ' 완결' : ''}` : '';
     return `
       <button type="button" class="s-item" data-i="${i}">
-        <img src="${esc(r.cover)}" alt="" loading="lazy">
+        <img src="${esc(r.cover)}" alt="" loading="lazy"${/^#[0-9a-f]{3,8}$/i.test(r.coverBg || '') ? ` style="background:${r.coverBg}"` : ''}>
         <span><b>${esc(r.title)}</b><small>${esc([r.author, r.note, count].filter(Boolean).join(' · '))}</small></span>
       </button>`;
   }).join('') + (searchState.hasMore
@@ -561,6 +625,11 @@ function pickResult(r) {
       link.latest = info.latest;
       link.latestFinished = info.finished;
       updateProgressHint();
+      // 카카오웹툰처럼 더 좋은 대표 이미지가 있으면 표지를 바꿈
+      if (info.cover) {
+        $('coverUrl').value = info.cover;
+        setFormCover(info.cover);
+      }
     }).catch(() => {});
   }
   $('searchBox').open = false;
