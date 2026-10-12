@@ -190,8 +190,17 @@ main { padding: 16px 16px 96px; }
   background: var(--bg); border: 1px solid var(--border);
 }
 .progress-input { display: flex; align-items: center; gap: 6px; color: var(--text); }
-.progress-input input { width: 110px; }
-.latest-info { color: var(--muted); }
+.progress-input input { width: 100px; }
+
+/* 원래 플랫폼으로 가는 링크 (카드 + 입력 창) */
+.go-links { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 6px; }
+.go-link { font-size: 0.72rem; color: var(--accent); text-decoration: none; white-space: nowrap; }
+.link-list { list-style: none; margin: 4px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.link-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.link-list .go-link { font-size: 0.9rem; }
+.link-list .muted { color: var(--muted); font-size: 0.85rem; }
+.url-input { display: flex; align-items: center; gap: 8px; }
+.url-input input { flex: 1; min-width: 0; }
 .new-badge {
   display: inline-block; margin-top: 4px;
   font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
@@ -259,7 +268,8 @@ label input, label select { color: var(--text); }
 }
 .s-item img { width: 44px; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 4px; background: var(--border); flex-shrink: 0; }
 .s-item b { display: block; font-size: 0.92rem; }
-.s-item small { color: var(--muted); }
+.s-item small { display: block; color: var(--muted); }
+.s-item .s-platforms { color: var(--accent); margin-top: 2px; } /* 이 작품이 있는 플랫폼들 */
 .s-more { width: 100%; padding: 10px; }
 
 .form-actions { display: flex; gap: 8px; margin-top: 6px; }
@@ -281,6 +291,8 @@ label input, label select { color: var(--text); }
   .progress { flex-wrap: wrap; gap: 4px; margin-top: 4px; font-size: 0.68rem; }
   .plus-btn { font-size: 0.65rem; padding: 1px 7px; }
   .new-badge { font-size: 0.6rem; padding: 1px 6px; }
+  .go-links { gap: 0 6px; margin-top: 4px; }
+  .go-link { font-size: 0.62rem; }
   .review { font-size: 0.7rem; margin-top: 4px; -webkit-line-clamp: 1; }
   .cal-day-title { font-size: 0.92rem; }
   .row { grid-template-columns: 1fr; }

@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-title" content="내 서재">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <!-- ===== 상단: 제목, 통계, 검색/필터 ===== -->
@@ -91,21 +91,10 @@
     <form id="workForm">
       <h2 id="editorTitle">작품 추가</h2>
 
-      <!-- 플랫폼에서 검색해서 자동으로 채우기 -->
+      <!-- 작품 검색해서 자동으로 채우기 (모든 플랫폼을 한꺼번에 검색) -->
       <details id="searchBox" class="search-box">
-        <summary>🔍 플랫폼에서 검색해서 채우기</summary>
+        <summary>🔍 작품 검색해서 채우기</summary>
         <div class="search-row">
-          <select id="s-source" aria-label="검색할 플랫폼">
-            <option value="naverWebtoon">네이버웹툰</option>
-            <option value="naverBest">네이버 베스트도전</option>
-            <option value="naverChallenge">네이버 도전만화</option>
-            <option value="seriesNovel">네이버 시리즈 (웹소설)</option>
-            <option value="seriesComic">네이버 시리즈 (만화)</option>
-            <option value="kakaoWebtoon">카카오웹툰</option>
-            <option value="kakao">카카오페이지</option>
-            <option value="mrblue">미스터블루</option>
-            <option value="ridi">리디</option>
-          </select>
           <input type="search" id="s-query" placeholder="작품 제목" enterkeyhint="search">
           <button type="button" id="s-btn" class="primary">검색</button>
         </div>
@@ -146,22 +135,23 @@
         </label>
       </div>
 
-      <label>어디까지 봤나요?
+      <!-- 회차는 직접 입력 (본 회차 / 지금까지 나온 회차) -->
+      <div class="field">
+        <span class="field-label">어디까지 봤나요? <small>(최신 회차는 넣으면 "안 본 N화"가 표시돼요)</small></span>
         <span class="progress-input">
-          <!-- 최신 회차를 알면 목록에서 고르고, 모르면 숫자로 직접 입력 -->
-          <select id="f-progress-select" hidden></select>
-          <input type="number" id="f-progress" min="0" max="99999" inputmode="numeric" placeholder="0">
-          <span id="progressSuffix"><span id="progressUnit">화</span>까지</span>
-          <small id="latestInfo" class="latest-info"></small>
+          <input type="number" id="f-progress" min="0" max="99999" inputmode="numeric" placeholder="본 회차" aria-label="본 회차">
+          <span>/</span>
+          <input type="number" id="f-latest" min="0" max="99999" inputmode="numeric" placeholder="최신 회차" aria-label="최신 회차">
+          <span id="progressUnit">화</span>
         </span>
-      </label>
+      </div>
 
       <div class="row">
         <label>작가
           <input id="f-author" maxlength="50" autocomplete="off">
         </label>
         <label>플랫폼
-          <input id="f-platform" list="platforms" maxlength="30" autocomplete="off">
+          <input id="f-platform" list="platforms" maxlength="80" autocomplete="off">
         </label>
       </div>
       <datalist id="platforms">
@@ -169,6 +159,16 @@
         <option value="네이버 시리즈"><option value="리디"><option value="레진코믹스"><option value="미스터블루">
         <option value="문피아"><option value="노벨피아"><option value="종이책">
       </datalist>
+
+      <!-- 보러 갈 곳: 검색으로 고르면 그 작품이 있는 플랫폼 링크가 모두 들어감 -->
+      <div class="field">
+        <span class="field-label">보러 갈 곳 <small>(검색으로 고르면 자동으로 채워져요)</small></span>
+        <ul id="linkList" class="link-list"></ul>
+        <span class="url-input">
+          <input type="url" id="f-url" maxlength="500" placeholder="주소 직접 추가 https://..." autocomplete="off" aria-label="주소 직접 추가">
+          <button type="button" id="f-url-add" class="ghost">추가</button>
+        </span>
+      </div>
 
       <div class="field">
         <span class="field-label">평점 <small>(별의 왼쪽 절반을 누르면 0.5점)</small></span>
@@ -201,6 +201,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
