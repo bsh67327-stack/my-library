@@ -337,7 +337,7 @@ const SEARCH_SOURCES = {
 // 검색 서버에 요청 보내기
 async function callServer(source, q) {
   const res = await fetch(`${SEARCH_SERVER}?source=${source}&q=${encodeURIComponent(q.slice(0, 50))}`);
-  if (!res.ok) throw new Error(res.status);
+  if (!res.ok) throw new Error(`서버 응답 ${res.status}`);
   return res.json();
 }
 
@@ -373,7 +373,8 @@ async function searchPlatform() {
   try {
     searchResults = (await fetchSearch(sourceKey, q)).slice(0, 20).map((r) => ({ ...r, source: sourceKey }));
   } catch (err) {
-    box.innerHTML = '<p class="msg">검색에 실패했어요. 잠시 후 다시 해보세요.</p>';
+    // 원인을 같이 보여줘서 문제를 찾기 쉽게 함
+    box.innerHTML = `<p class="msg">검색에 실패했어요. 잠시 후 다시 해보세요.<br><small>(${esc(sourceKey)}: ${esc(err.message || err)})</small></p>`;
     return;
   }
 
@@ -415,12 +416,33 @@ function pickResult(r) {
   $('s-results').innerHTML = '';
 }
 
-// 입력 창의 "몇 화까지" 옆에 최신 회차 표시
+// "어디까지 봤나요?" 칸 그리기
+// 최신 회차를 알면 1화~최신화 목록에서 고르고, 모르면 숫자 입력칸을 보여줌
+// (실제 값은 항상 숫자 입력칸 f-progress에 저장됨 - 목록은 그걸 보여주는 역할)
 function updateProgressHint() {
   const unit = unitOf($('f-type').value);
+  const latest = formLink?.latest || 0;
+  const current = Math.max(0, Math.floor(Number($('f-progress').value) || 0));
+  const select = $('f-progress-select');
+  const useList = latest > 0;
+
+  select.hidden = !useList;
+  $('f-progress').hidden = useList;
+  $('progressSuffix').hidden = useList;
   $('progressUnit').textContent = unit;
-  $('latestInfo').textContent = formLink?.latest
-    ? `(현재 ${formLink.latest}${unit}${formLink.latestFinished ? ' 완결' : ''})`
+
+  if (useList) {
+    const max = Math.max(latest, current);
+    let options = '<option value="0">아직 안 봄</option>';
+    for (let i = 1; i <= max; i++) {
+      options += `<option value="${i}">${i}${unit}까지${i === latest ? ' (최신)' : ''}</option>`;
+    }
+    select.innerHTML = options;
+    select.value = String(current);
+  }
+
+  $('latestInfo').textContent = latest
+    ? `현재 ${latest}${unit}${formLink.latestFinished ? ' 완결' : ''}`
     : '';
 }
 
@@ -514,6 +536,9 @@ function bindEvents() {
   // 입력 창
   $('workForm').addEventListener('submit', handleSubmit);
   $('f-type').addEventListener('change', updateProgressHint);
+  $('f-progress-select').addEventListener('change', (e) => {
+    $('f-progress').value = e.target.value;
+  });
   $('cancelBtn').addEventListener('click', () => $('editor').close());
   $('deleteBtn').addEventListener('click', handleDelete);
 

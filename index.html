@@ -12,7 +12,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="내 서재">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="stylesheet" href="style.css">
+  <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <!-- ===== 상단: 제목, 통계, 검색/필터 ===== -->
@@ -118,8 +119,10 @@
 
       <label>어디까지 봤나요?
         <span class="progress-input">
+          <!-- 최신 회차를 알면 목록에서 고르고, 모르면 숫자로 직접 입력 -->
+          <select id="f-progress-select" hidden></select>
           <input type="number" id="f-progress" min="0" max="99999" inputmode="numeric" placeholder="0">
-          <span id="progressUnit">화</span>까지
+          <span id="progressSuffix"><span id="progressUnit">화</span>까지</span>
           <small id="latestInfo" class="latest-info"></small>
         </span>
       </label>
@@ -169,6 +172,6 @@
     </form>
   </dialog>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
