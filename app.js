@@ -6,6 +6,9 @@
 const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책' };
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
+// 앱 버전 (화면 맨 위 통계 줄 끝에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
+const APP_VERSION = 9;
+
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
 
@@ -189,7 +192,8 @@ function renderStats() {
   const done = works.filter((w) => w.status === 'done').length;
   const rated = works.filter((w) => w.rating > 0);
   const avg = rated.length ? (rated.reduce((s, w) => s + w.rating, 0) / rated.length).toFixed(1) : '-';
-  $('stats').textContent = `전체 ${works.length}작품 · 완독 ${done} · 평균 평점 ★ ${avg}`;
+  $('stats').innerHTML = `전체 ${works.length}작품 · 완독 ${done} · 평균 평점 ★ ${avg}`
+    + ` <small class="version">v${APP_VERSION}</small>`;
 }
 
 
