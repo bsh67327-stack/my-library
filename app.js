@@ -293,6 +293,7 @@ const naverSource = (platform) => ({
     finished: !!w.finished,
     note: '',
   })),
+  hasMore: (data, page) => page + 1 < (data.pageInfo?.totalPages || 0),
 });
 
 const SEARCH_SOURCES = {
@@ -314,6 +315,7 @@ const SEARCH_SOURCES = {
         note: b.parent_category_name || b.category_name || '',
       };
     }),
+    hasMore: (data, page) => (page + 1) * 24 < (data.total || 0),
   },
   kakao: {
     platform: '카카오페이지',
@@ -327,6 +329,7 @@ const SEARCH_SOURCES = {
       finished: false,
       note: s.category || '',
     })),
+    hasMore: (data) => data.result ? !data.result.is_end : false,
     fetchLatest: async (id) => {
       const data = await callServer('kakaoSeries', String(id));
       return { latest: data.result?.content?.on_sale_count || 0, finished: false };
@@ -334,16 +337,18 @@ const SEARCH_SOURCES = {
   },
 };
 
-// 검색 서버에 요청 보내기
-async function callServer(source, q) {
-  const res = await fetch(`${SEARCH_SERVER}?source=${source}&q=${encodeURIComponent(q.slice(0, 50))}`);
+// 검색 서버에 요청 보내기 (page는 0부터 시작)
+async function callServer(source, q, page = 0) {
+  const res = await fetch(`${SEARCH_SERVER}?source=${source}&q=${encodeURIComponent(q.slice(0, 50))}&page=${page}`);
   if (!res.ok) throw new Error(`서버 응답 ${res.status}`);
   return res.json();
 }
 
-// 검색해서 결과를 같은 모양으로 돌려줌
-async function fetchSearch(sourceKey, q) {
-  return SEARCH_SOURCES[sourceKey].parse(await callServer(sourceKey, q));
+// 검색해서 { items: 같은 모양으로 바꾼 결과, hasMore: 다음 페이지가 있는지 } 돌려줌
+async function fetchSearch(sourceKey, q, page = 0) {
+  const src = SEARCH_SOURCES[sourceKey];
+  const data = await callServer(sourceKey, q, page);
+  return { items: src.parse(data), hasMore: src.hasMore(data, page) };
 }
 
 // 저장된 작품의 최신 회차 확인
@@ -351,43 +356,76 @@ async function fetchSearch(sourceKey, q) {
 async function fetchLatestInfo(work) {
   const src = SEARCH_SOURCES[work.source];
   if (src.fetchLatest) return src.fetchLatest(work.sourceId);
-  const found = (await fetchSearch(work.source, work.title))
+  const found = (await fetchSearch(work.source, work.title)).items
     .find((r) => String(r.sourceId) === String(work.sourceId));
   return found ? { latest: found.latest, finished: found.finished } : null;
 }
 
 let searchResults = [];
+// 지금 보고 있는 검색 (더 보기 할 때 사용)
+let searchState = { source: '', q: '', page: 0, hasMore: false, loading: false };
 let formLink = null; // 입력 중인 작품이 연결된 플랫폼 정보 { source, sourceId, latest, latestFinished }
 
-async function searchPlatform() {
-  const sourceKey = $('s-source').value;
-  const q = $('s-query').value.trim();
+// 새로 검색 (more = true면 다음 페이지를 이어서 불러옴)
+async function searchPlatform(more = false) {
   const box = $('s-results');
-  if (!q) return;
   if (!SEARCH_SERVER) {
     box.innerHTML = '<p class="msg">검색 서버가 아직 연결되지 않았어요. (app.js의 SEARCH_SERVER)</p>';
     return;
   }
+  if (searchState.loading) return;
 
-  box.innerHTML = '<p class="msg">검색 중…</p>';
-  try {
-    searchResults = (await fetchSearch(sourceKey, q)).slice(0, 20).map((r) => ({ ...r, source: sourceKey }));
-  } catch (err) {
-    // 원인을 같이 보여줘서 문제를 찾기 쉽게 함
-    box.innerHTML = `<p class="msg">검색에 실패했어요. 잠시 후 다시 해보세요.<br><small>(${esc(sourceKey)}: ${esc(err.message || err)})</small></p>`;
-    return;
+  if (!more) {
+    const q = $('s-query').value.trim();
+    if (!q) return;
+    searchState = { source: $('s-source').value, q, page: 0, hasMore: false, loading: false };
+    searchResults = [];
+    box.innerHTML = '<p class="msg">검색 중…</p>';
+  } else {
+    searchState.page += 1;
+    const btn = $('s-more');
+    if (btn) { btn.disabled = true; btn.textContent = '불러오는 중…'; }
   }
 
-  box.innerHTML = searchResults.length
-    ? searchResults.map((r, i) => {
-        const count = r.latest ? `${r.latest}${unitOf(r.type)}${r.finished ? ' 완결' : ''}` : '';
-        return `
-        <button type="button" class="s-item" data-i="${i}">
-          <img src="${esc(r.cover)}" alt="" loading="lazy">
-          <span><b>${esc(r.title)}</b><small>${esc([r.author, r.note, count].filter(Boolean).join(' · '))}</small></span>
-        </button>`;
-      }).join('')
-    : '<p class="msg">검색 결과가 없어요.</p>';
+  const { source, q, page } = searchState;
+  searchState.loading = true;
+  try {
+    const result = await fetchSearch(source, q, page);
+    searchResults = searchResults.concat(result.items.map((r) => ({ ...r, source })));
+    searchState.hasMore = result.hasMore && result.items.length > 0;
+  } catch (err) {
+    if (more) searchState.page -= 1; // 실패하면 다음에 같은 페이지를 다시 시도
+    // 원인을 같이 보여줘서 문제를 찾기 쉽게 함
+    const msg = `<p class="msg">검색에 실패했어요. 잠시 후 다시 해보세요.<br><small>(${esc(source)}: ${esc(err.message || err)})</small></p>`;
+    if (more) {
+      renderSearchResults();
+      box.insertAdjacentHTML('beforeend', msg);
+    } else {
+      box.innerHTML = msg;
+    }
+    return;
+  } finally {
+    searchState.loading = false;
+  }
+  renderSearchResults();
+}
+
+function renderSearchResults() {
+  const box = $('s-results');
+  if (!searchResults.length) {
+    box.innerHTML = '<p class="msg">검색 결과가 없어요.</p>';
+    return;
+  }
+  box.innerHTML = searchResults.map((r, i) => {
+    const count = r.latest ? `${r.latest}${unitOf(r.type)}${r.finished ? ' 완결' : ''}` : '';
+    return `
+      <button type="button" class="s-item" data-i="${i}">
+        <img src="${esc(r.cover)}" alt="" loading="lazy">
+        <span><b>${esc(r.title)}</b><small>${esc([r.author, r.note, count].filter(Boolean).join(' · '))}</small></span>
+      </button>`;
+  }).join('') + (searchState.hasMore
+    ? `<button type="button" id="s-more" class="ghost s-more">더 보기 (지금 ${searchResults.length}개)</button>`
+    : `<p class="msg">검색 결과 ${searchResults.length}개를 모두 봤어요.</p>`);
 }
 
 // 검색 결과를 누르면 입력칸을 자동으로 채움
@@ -571,11 +609,12 @@ function bindEvents() {
   });
 
   // 플랫폼 검색 (엔터를 눌러도 저장되지 않고 검색되도록)
-  $('s-btn').addEventListener('click', searchPlatform);
+  $('s-btn').addEventListener('click', () => searchPlatform());
   $('s-query').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); searchPlatform(); }
   });
   $('s-results').addEventListener('click', (e) => {
+    if (e.target.closest('#s-more')) { searchPlatform(true); return; }
     const item = e.target.closest('.s-item');
     if (item) pickResult(searchResults[item.dataset.i]);
   });
