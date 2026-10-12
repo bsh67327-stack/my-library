@@ -125,6 +125,21 @@ main { padding: 16px 16px 96px; }
 .status-paused { color: #e67700; border-color: #e67700; }
 .status-dropped { color: var(--muted); }
 
+/* 몇 화까지 봤는지 + 빠른 +1 버튼 */
+.progress { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.82rem; }
+.plus-btn {
+  padding: 2px 8px; font-size: 0.75rem; border-radius: 999px;
+  background: var(--bg); border: 1px solid var(--border);
+}
+.progress-input { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.progress-input input { width: 110px; }
+.latest-info { color: var(--muted); }
+.new-badge {
+  display: inline-block; margin-top: 4px;
+  font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  background: var(--danger); color: #fff;
+}
+
 .empty { text-align: center; color: var(--muted); margin-top: 60px; line-height: 1.7; }
 
 /* ===== 별점 ===== */

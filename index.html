@@ -71,7 +71,10 @@
         <summary>🔍 플랫폼에서 검색해서 채우기</summary>
         <div class="search-row">
           <select id="s-source" aria-label="검색할 플랫폼">
-            <option value="naver">네이버웹툰</option>
+            <option value="naverWebtoon">네이버웹툰</option>
+            <option value="naverBest">네이버 베스트도전</option>
+            <option value="naverChallenge">네이버 도전만화</option>
+            <option value="kakao">카카오페이지</option>
             <option value="ridi">리디</option>
           </select>
           <input type="search" id="s-query" placeholder="작품 제목" enterkeyhint="search">
@@ -113,6 +116,14 @@
         </label>
       </div>
 
+      <label>어디까지 봤나요?
+        <span class="progress-input">
+          <input type="number" id="f-progress" min="0" max="99999" inputmode="numeric" placeholder="0">
+          <span id="progressUnit">화</span>까지
+          <small id="latestInfo" class="latest-info"></small>
+        </span>
+      </label>
+
       <div class="row">
         <label>작가
           <input id="f-author" maxlength="50" autocomplete="off">
@@ -122,7 +133,7 @@
         </label>
       </div>
       <datalist id="platforms">
-        <option value="네이버웹툰"><option value="카카오웹툰"><option value="카카오페이지">
+        <option value="네이버웹툰"><option value="네이버 베스트도전"><option value="네이버 도전만화"><option value="카카오웹툰"><option value="카카오페이지">
         <option value="네이버 시리즈"><option value="리디"><option value="레진코믹스">
         <option value="문피아"><option value="노벨피아"><option value="종이책">
       </datalist>
