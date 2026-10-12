@@ -66,6 +66,20 @@
     <form id="workForm">
       <h2 id="editorTitle">작품 추가</h2>
 
+      <!-- 플랫폼에서 검색해서 자동으로 채우기 -->
+      <details id="searchBox" class="search-box">
+        <summary>🔍 플랫폼에서 검색해서 채우기</summary>
+        <div class="search-row">
+          <select id="s-source" aria-label="검색할 플랫폼">
+            <option value="naver">네이버웹툰</option>
+            <option value="ridi">리디</option>
+          </select>
+          <input type="search" id="s-query" placeholder="작품 제목" enterkeyhint="search">
+          <button type="button" id="s-btn" class="primary">검색</button>
+        </div>
+        <div id="s-results" class="s-results"></div>
+      </details>
+
       <div class="cover-field">
         <div id="coverPreview" class="cover-preview"><span>표지 없음</span></div>
         <div class="cover-inputs">

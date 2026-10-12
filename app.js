@@ -6,6 +6,9 @@
 const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책' };
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
+// 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
+const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
+
 // 화면 상태: 지금 어떤 필터/정렬을 보고 있는지
 const view = { type: 'all', status: 'all', sort: 'updated', query: '' };
 
@@ -164,8 +167,13 @@ function openEditor(work) {
 
   setFormCover(work?.cover || '');
   setFormRating(work?.rating || 0);
+
+  // 새 작품이면 검색창을 펼쳐서 보여줌
+  $('searchBox').open = !work;
+  $('s-query').value = '';
+  $('s-results').innerHTML = '';
   $('editor').showModal();
-  if (!work) $('f-title').focus();
+  if (!work) $('s-query').focus();
 }
 
 function setFormCover(src) {
@@ -224,7 +232,83 @@ async function handleDelete() {
 }
 
 
-// ----- 6. 백업 / 복원 -----
+// ----- 6. 플랫폼에서 작품 검색 -----
+
+// 플랫폼마다 결과 모양이 달라서, 같은 모양 { title, author, cover, type, note }으로 바꿔줌
+const SEARCH_SOURCES = {
+  naver: {
+    platform: '네이버웹툰',
+    parse: (data) => [
+      ...(data.searchWebtoonResult?.searchViewList || []),
+      ...(data.searchBestChallengeResult?.searchViewList || []),
+    ].map((w) => ({
+      title: w.titleName,
+      author: w.displayAuthor,
+      cover: w.thumbnailUrl,
+      type: 'webtoon',
+      note: w.webtoonLevelCode === 'BEST_CHALLENGE' ? '베스트도전' : '',
+    })),
+  },
+  ridi: {
+    platform: '리디',
+    parse: (data) => (data.books || []).map((b) => {
+      const category = `${b.parent_category_name || ''} ${b.category_name || ''}`;
+      return {
+        title: b.title,
+        author: b.author,
+        cover: `https://img.ridicdn.net/cover/${b.b_id}/large`,
+        type: /만화|코믹|웹툰/.test(category) ? 'comic' : 'webnovel',
+        note: b.category_name || '',
+      };
+    }),
+  },
+};
+
+let searchResults = [];
+
+async function searchPlatform() {
+  const sourceKey = $('s-source').value;
+  const q = $('s-query').value.trim();
+  const box = $('s-results');
+  if (!q) return;
+  if (!SEARCH_SERVER) {
+    box.innerHTML = '<p class="msg">검색 서버가 아직 연결되지 않았어요. (app.js의 SEARCH_SERVER)</p>';
+    return;
+  }
+
+  box.innerHTML = '<p class="msg">검색 중…</p>';
+  try {
+    const res = await fetch(`${SEARCH_SERVER}?source=${sourceKey}&q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error(res.status);
+    searchResults = SEARCH_SOURCES[sourceKey].parse(await res.json()).slice(0, 20);
+  } catch (err) {
+    box.innerHTML = '<p class="msg">검색에 실패했어요. 잠시 후 다시 해보세요.</p>';
+    return;
+  }
+
+  box.innerHTML = searchResults.length
+    ? searchResults.map((r, i) => `
+        <button type="button" class="s-item" data-i="${i}">
+          <img src="${esc(r.cover)}" alt="" loading="lazy">
+          <span><b>${esc(r.title)}</b><small>${esc([r.author, r.note].filter(Boolean).join(' · '))}</small></span>
+        </button>`).join('')
+    : '<p class="msg">검색 결과가 없어요.</p>';
+}
+
+// 검색 결과를 누르면 입력칸을 자동으로 채움
+function pickResult(r) {
+  $('f-title').value = r.title;
+  $('f-author').value = r.author || '';
+  $('f-type').value = r.type;
+  $('f-platform').value = SEARCH_SOURCES[$('s-source').value].platform;
+  $('coverUrl').value = r.cover;
+  setFormCover(r.cover);
+  $('searchBox').open = false;
+  $('s-results').innerHTML = '';
+}
+
+
+// ----- 7. 백업 / 복원 -----
 function exportBackup() {
   const data = { app: 'my-library', version: 1, exportedAt: new Date().toISOString(), works };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -254,7 +338,7 @@ async function importBackup(file) {
 }
 
 
-// ----- 7. 버튼·입력에 동작 연결 -----
+// ----- 8. 버튼·입력에 동작 연결 -----
 function bindEvents() {
   // 필터 & 정렬
   $('typeTabs').addEventListener('click', (e) => {
@@ -308,6 +392,16 @@ function bindEvents() {
     setFormCover('');
   });
 
+  // 플랫폼 검색 (엔터를 눌러도 저장되지 않고 검색되도록)
+  $('s-btn').addEventListener('click', searchPlatform);
+  $('s-query').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); searchPlatform(); }
+  });
+  $('s-results').addEventListener('click', (e) => {
+    const item = e.target.closest('.s-item');
+    if (item) pickResult(searchResults[item.dataset.i]);
+  });
+
   // 백업 / 복원
   $('exportBtn').addEventListener('click', exportBackup);
   $('importBtn').addEventListener('click', () => $('importFile').click());
@@ -318,7 +412,7 @@ function bindEvents() {
 }
 
 
-// ----- 8. 앱 시작 -----
+// ----- 9. 앱 시작 -----
 async function start() {
   bindEvents();
   try {
