@@ -59,6 +59,11 @@ function esc(text) {
   ));
 }
 
+// 만화책은 '권', 웹툰/웹소설은 '화'
+function unitOf(type) {
+  return type === 'comic' ? '권' : '화';
+}
+
 function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -125,6 +130,7 @@ function render() {
         <h3 title="${esc(w.title)}">${esc(w.title)}</h3>
         <p class="author">${esc([w.author, w.platform].filter(Boolean).join(' · ') || ' ')}</p>
         <span class="status status-${w.status}">${STATUSES[w.status]}</span>
+        ${progressHTML(w)}
         ${w.review ? `<p class="review">“${esc(w.review)}”</p>` : ''}
       </div>
     </article>
@@ -138,6 +144,20 @@ function render() {
     : '조건에 맞는 작품이 없어요.';
 
   renderStats();
+}
+
+// 카드의 "📖 32 / 189화" 줄과 "안 본 157화" 표시
+function progressHTML(w) {
+  if (!w.progress && !w.latest && w.status !== 'reading') return '';
+  const unit = unitOf(w.type);
+  const seen = w.progress || 0;
+  const left = w.latest ? w.latest - seen : 0;
+  return `
+    <div class="progress">
+      <span>📖 ${seen}${w.latest ? ` / ${w.latest}` : ''}${unit}${w.latestFinished ? ' 완결' : ''}</span>
+      ${w.status === 'reading' ? `<button type="button" class="plus-btn" data-id="${esc(w.id)}">+1</button>` : ''}
+    </div>
+    ${w.status === 'reading' && left > 0 ? `<span class="new-badge">안 본 ${left}${unit}</span>` : ''}`;
 }
 
 function renderStats() {
@@ -160,6 +180,11 @@ function openEditor(work) {
   $('f-author').value = work?.author || '';
   $('f-platform').value = work?.platform || '';
   $('f-review').value = work?.review || '';
+  $('f-progress').value = work?.progress || '';
+  formLink = work?.source
+    ? { source: work.source, sourceId: work.sourceId, latest: work.latest, latestFinished: work.latestFinished }
+    : null;
+  updateProgressHint();
   $('f-started').value = work?.startedAt || '';
   $('f-finished').value = work?.finishedAt || '';
   $('coverUrl').value = work?.cover && !work.cover.startsWith('data:') ? work.cover : '';
@@ -202,12 +227,20 @@ async function handleSubmit(e) {
     author: $('f-author').value.trim(),
     platform: $('f-platform').value.trim(),
     review: $('f-review').value.trim(),
+    progress: Math.max(0, Math.floor(Number($('f-progress').value) || 0)),
     rating: formRating,
     cover: formCover,
     startedAt: $('f-started').value,
     finishedAt: $('f-finished').value,
     createdAt: old?.createdAt || now,
     updatedAt: now,
+    // 플랫폼 연결 정보 (검색으로 추가한 작품만)
+    source: formLink?.source || '',
+    sourceId: formLink?.sourceId || '',
+    latest: formLink?.latest || 0,
+    latestFinished: !!formLink?.latestFinished,
+    // 회차 수를 아직 모르면 0으로 둬서 다음에 앱을 열 때 바로 확인하게 함
+    latestCheckedAt: formLink?.latest ? (old?.sourceId === formLink.sourceId ? old.latestCheckedAt : now) : 0,
   };
   if (!work.title) return;
 
@@ -219,6 +252,16 @@ async function handleSubmit(e) {
   await saveOne(work);
   works = old ? works.map((w) => (w.id === work.id ? work : w)) : [...works, work];
   $('editor').close();
+  render();
+}
+
+// 카드의 +1 버튼: 수정 창을 열지 않고 바로 한 화 더하기
+async function addProgress(id) {
+  const old = works.find((w) => w.id === id);
+  if (!old) return;
+  const work = { ...old, progress: (old.progress || 0) + 1, updatedAt: Date.now() };
+  await saveOne(work);
+  works = works.map((w) => (w.id === id ? work : w));
   render();
 }
 
@@ -234,37 +277,87 @@ async function handleDelete() {
 
 // ----- 6. 플랫폼에서 작품 검색 -----
 
-// 플랫폼마다 결과 모양이 달라서, 같은 모양 { title, author, cover, type, note }으로 바꿔줌
+// 플랫폼마다 결과 모양이 달라서, 같은 모양으로 바꿔줌
+// { sourceId(플랫폼의 작품 번호), title, author, cover, type, latest(현재 회차 수), finished(완결), note }
+
+// 네이버웹툰 / 베스트도전 / 도전만화는 결과 모양이 같아서 하나로 처리
+const naverSource = (platform) => ({
+  platform,
+  parse: (data) => (data.searchList || []).map((w) => ({
+    sourceId: w.titleId,
+    title: w.titleName,
+    author: w.displayAuthor,
+    cover: w.thumbnailUrl,
+    type: 'webtoon',
+    latest: w.articleTotalCount || 0,
+    finished: !!w.finished,
+    note: '',
+  })),
+});
+
 const SEARCH_SOURCES = {
-  naver: {
-    platform: '네이버웹툰',
-    parse: (data) => [
-      ...(data.searchWebtoonResult?.searchViewList || []),
-      ...(data.searchBestChallengeResult?.searchViewList || []),
-    ].map((w) => ({
-      title: w.titleName,
-      author: w.displayAuthor,
-      cover: w.thumbnailUrl,
-      type: 'webtoon',
-      note: w.webtoonLevelCode === 'BEST_CHALLENGE' ? '베스트도전' : '',
-    })),
-  },
+  naverWebtoon: naverSource('네이버웹툰'),
+  naverBest: naverSource('네이버 베스트도전'),
+  naverChallenge: naverSource('네이버 도전만화'),
   ridi: {
     platform: '리디',
     parse: (data) => (data.books || []).map((b) => {
       const category = `${b.parent_category_name || ''} ${b.category_name || ''}`;
       return {
+        sourceId: b.b_id,
         title: b.title,
         author: b.author,
         cover: `https://img.ridicdn.net/cover/${b.b_id}/large`,
-        type: /만화|코믹|웹툰/.test(category) ? 'comic' : 'webnovel',
-        note: b.category_name || '',
+        type: /웹툰/.test(category) ? 'webtoon' : /만화|코믹/.test(category) ? 'comic' : 'webnovel',
+        latest: b.book_count || 0,
+        finished: !!b.is_series_complete,
+        note: b.parent_category_name || b.category_name || '',
       };
     }),
   },
+  kakao: {
+    platform: '카카오페이지',
+    parse: (data) => (data.result?.list || []).map((s) => ({
+      sourceId: s.series_id,
+      title: s.title,
+      author: s.authors,
+      cover: `https://page-images.kakaoentcdn.com/download/resource?kid=${s.thumbnail}&filename=th3`,
+      type: s.operator_property?.is_manga ? 'comic' : s.category === '웹툰' ? 'webtoon' : 'webnovel',
+      latest: 0, // 검색 결과에는 회차 수가 없어서 fetchLatest로 따로 불러옴
+      finished: false,
+      note: s.category || '',
+    })),
+    fetchLatest: async (id) => {
+      const data = await callServer('kakaoSeries', String(id));
+      return { latest: data.result?.content?.on_sale_count || 0, finished: false };
+    },
+  },
 };
 
+// 검색 서버에 요청 보내기
+async function callServer(source, q) {
+  const res = await fetch(`${SEARCH_SERVER}?source=${source}&q=${encodeURIComponent(q.slice(0, 50))}`);
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+// 검색해서 결과를 같은 모양으로 돌려줌
+async function fetchSearch(sourceKey, q) {
+  return SEARCH_SOURCES[sourceKey].parse(await callServer(sourceKey, q));
+}
+
+// 저장된 작품의 최신 회차 확인
+// (작품 번호로 바로 확인할 수 있으면 그걸로, 아니면 제목으로 다시 검색해서 같은 번호를 찾음)
+async function fetchLatestInfo(work) {
+  const src = SEARCH_SOURCES[work.source];
+  if (src.fetchLatest) return src.fetchLatest(work.sourceId);
+  const found = (await fetchSearch(work.source, work.title))
+    .find((r) => String(r.sourceId) === String(work.sourceId));
+  return found ? { latest: found.latest, finished: found.finished } : null;
+}
+
 let searchResults = [];
+let formLink = null; // 입력 중인 작품이 연결된 플랫폼 정보 { source, sourceId, latest, latestFinished }
 
 async function searchPlatform() {
   const sourceKey = $('s-source').value;
@@ -278,20 +371,21 @@ async function searchPlatform() {
 
   box.innerHTML = '<p class="msg">검색 중…</p>';
   try {
-    const res = await fetch(`${SEARCH_SERVER}?source=${sourceKey}&q=${encodeURIComponent(q)}`);
-    if (!res.ok) throw new Error(res.status);
-    searchResults = SEARCH_SOURCES[sourceKey].parse(await res.json()).slice(0, 20);
+    searchResults = (await fetchSearch(sourceKey, q)).slice(0, 20).map((r) => ({ ...r, source: sourceKey }));
   } catch (err) {
     box.innerHTML = '<p class="msg">검색에 실패했어요. 잠시 후 다시 해보세요.</p>';
     return;
   }
 
   box.innerHTML = searchResults.length
-    ? searchResults.map((r, i) => `
+    ? searchResults.map((r, i) => {
+        const count = r.latest ? `${r.latest}${unitOf(r.type)}${r.finished ? ' 완결' : ''}` : '';
+        return `
         <button type="button" class="s-item" data-i="${i}">
           <img src="${esc(r.cover)}" alt="" loading="lazy">
-          <span><b>${esc(r.title)}</b><small>${esc([r.author, r.note].filter(Boolean).join(' · '))}</small></span>
-        </button>`).join('')
+          <span><b>${esc(r.title)}</b><small>${esc([r.author, r.note, count].filter(Boolean).join(' · '))}</small></span>
+        </button>`;
+      }).join('')
     : '<p class="msg">검색 결과가 없어요.</p>';
 }
 
@@ -300,15 +394,71 @@ function pickResult(r) {
   $('f-title').value = r.title;
   $('f-author').value = r.author || '';
   $('f-type').value = r.type;
-  $('f-platform').value = SEARCH_SOURCES[$('s-source').value].platform;
+  $('f-platform').value = SEARCH_SOURCES[r.source].platform;
   $('coverUrl').value = r.cover;
   setFormCover(r.cover);
+  const link = { source: r.source, sourceId: r.sourceId, latest: r.latest, latestFinished: r.finished };
+  formLink = link;
+  updateProgressHint();
+
+  // 카카오페이지처럼 검색 결과에 회차 수가 없으면 따로 불러옴
+  const src = SEARCH_SOURCES[r.source];
+  if (src.fetchLatest) {
+    src.fetchLatest(r.sourceId).then((info) => {
+      if (formLink !== link) return; // 그사이 다른 작품을 골랐으면 무시
+      link.latest = info.latest;
+      link.latestFinished = info.finished;
+      updateProgressHint();
+    }).catch(() => {});
+  }
   $('searchBox').open = false;
   $('s-results').innerHTML = '';
 }
 
+// 입력 창의 "몇 화까지" 옆에 최신 회차 표시
+function updateProgressHint() {
+  const unit = unitOf($('f-type').value);
+  $('progressUnit').textContent = unit;
+  $('latestInfo').textContent = formLink?.latest
+    ? `(현재 ${formLink.latest}${unit}${formLink.latestFinished ? ' 완결' : ''})`
+    : '';
+}
 
-// ----- 7. 백업 / 복원 -----
+
+// ----- 7. 최신 회차 자동 확인 -----
+// 보는 중/보류인 작품을 플랫폼에서 다시 검색해서 회차 수를 갱신
+const REFRESH_INTERVAL = 3 * 60 * 60 * 1000; // 같은 작품은 3시간에 한 번만 확인
+let refreshing = false;
+
+async function refreshLatest() {
+  if (!SEARCH_SERVER || refreshing) return;
+  refreshing = true;
+  const targets = works.filter((w) =>
+    w.source && SEARCH_SOURCES[w.source] && w.sourceId &&
+    (w.status === 'reading' || w.status === 'paused') &&
+    Date.now() - (w.latestCheckedAt || 0) > REFRESH_INTERVAL
+  );
+
+  for (const target of targets.slice(0, 30)) {
+    try {
+      const found = await fetchLatestInfo(target);
+      if (!found) continue;
+      // 그사이 사용자가 고쳤을 수 있으니 가장 최신 기록을 기준으로 회차 정보만 바꿈
+      const current = works.find((w) => w.id === target.id);
+      if (!current) continue;
+      const updated = { ...current, latest: found.latest, latestFinished: found.finished, latestCheckedAt: Date.now() };
+      await saveOne(updated);
+      works = works.map((w) => (w.id === updated.id ? updated : w));
+    } catch {
+      // 실패하면 다음에 다시 시도
+    }
+  }
+  refreshing = false;
+  if (targets.length) render();
+}
+
+
+// ----- 8. 백업 / 복원 -----
 function exportBackup() {
   const data = { app: 'my-library', version: 1, exportedAt: new Date().toISOString(), works };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -338,7 +488,7 @@ async function importBackup(file) {
 }
 
 
-// ----- 8. 버튼·입력에 동작 연결 -----
+// ----- 9. 버튼·입력에 동작 연결 -----
 function bindEvents() {
   // 필터 & 정렬
   $('typeTabs').addEventListener('click', (e) => {
@@ -354,6 +504,8 @@ function bindEvents() {
 
   // 카드 누르면 수정 창 열기
   $('grid').addEventListener('click', (e) => {
+    const plus = e.target.closest('.plus-btn');
+    if (plus) { addProgress(plus.dataset.id); return; }
     const card = e.target.closest('.card');
     if (card) openEditor(works.find((w) => w.id === card.dataset.id));
   });
@@ -361,6 +513,7 @@ function bindEvents() {
 
   // 입력 창
   $('workForm').addEventListener('submit', handleSubmit);
+  $('f-type').addEventListener('change', updateProgressHint);
   $('cancelBtn').addEventListener('click', () => $('editor').close());
   $('deleteBtn').addEventListener('click', handleDelete);
 
@@ -412,7 +565,7 @@ function bindEvents() {
 }
 
 
-// ----- 9. 앱 시작 -----
+// ----- 10. 앱 시작 -----
 async function start() {
   bindEvents();
   try {
@@ -422,6 +575,12 @@ async function start() {
     alert('저장소를 열 수 없어요. 시크릿 모드라면 일반 창에서 열어 주세요.');
   }
   render();
+
+  // 최신 회차 확인: 앱을 열 때 + 다른 앱 갔다가 돌아올 때
+  refreshLatest();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshLatest();
+  });
 
   // 인터넷 주소(https)로 배포했을 때만: 앱 설치 & 오프라인 지원
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
