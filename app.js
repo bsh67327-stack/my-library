@@ -7,10 +7,21 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화' };
 
 // 예전 버전의 '일본만화'(manga)는 '만화'로 합침
 const fixType = (w) => (w && w.type === 'manga' ? { ...w, type: 'comic' } : w);
+
+// 예전에 웹툰으로 담은 일본 만화(작가 이름으로 판단)를 만화로 바꿈 - 한 번만 실행
+// (그 뒤에 직접 웹툰으로 되돌린 작품은 다시 바꾸지 않음)
+async function fixSavedManga() {
+  try { if (localStorage.getItem('mangaFix1')) return; } catch { return; }
+  const isManga = (w) => w.type === 'webtoon' && looksJapaneseAuthor(String(w.author || '').split(/[,/]/));
+  const changed = works.filter(isManga).map((w) => ({ ...w, type: 'comic', unit: w.unit || '화' }));
+  for (const w of changed) await saveOne(w);
+  if (changed.length) works = works.map((w) => changed.find((c) => c.id === w.id) || w);
+  try { localStorage.setItem('mangaFix1', '1'); } catch { /* 다음에 다시 시도 */ }
+}
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 44;
+const APP_VERSION = 47;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -89,14 +100,17 @@ function unitOf(type, unit) {
 
 // 작가 이름이 모두 일본 작가처럼 보이면 일본 만화로 추정 (→ 만화)
 // - "Koyoharu Gotouge", "EIICHIRO ODA"처럼 두 단어 이상의 영문
-//   ("SIU", "ARCHE"처럼 한 단어 영문 필명과 "Lenvision Animation" 같은 회사 이름은 제외)
-// - "아쿠타미 게게", "오다 에이치로"처럼 띄어 쓴 한글 이름 (한국 작가는 보통 붙여 씀)
-// 플랫폼이 일본 만화를 따로 표시하지 않고 웹툰으로 보내는 경우가 많아서 (카카오페이지 연재본 등)
+//   ("SIU", "ARCHE"처럼 한 단어 영문 필명과 "Lenvision Animation", "COL GROUP" 같은 회사 이름은 제외)
+// - "아쿠타미 게게", "에토 슌지"처럼 띄어 쓴 한글 이름 중 받침이 없거나 ㄴ 받침만 있는 것
+//   (일본 이름을 한글로 쓰면 받침이 거의 없음 - "그림왕 양치기", "엘렌 심", "네이버웹툰 작가"는 걸러짐)
+// 플랫폼이 일본 만화를 따로 표시하지 않고 웹툰으로 보내는 경우가 많아서 (카카오페이지 연재본, 네이버웹툰 아인 등)
+const noBatchimExceptN = (text) => [...text].every((ch) => [0, 4].includes((ch.charCodeAt(0) - 0xac00) % 28));
 function looksJapaneseAuthor(names) {
   const list = names.map((n) => String(n).replace(/\([^)]*\)/g, '').trim()).filter(Boolean);
   return list.length > 0 && list.every((n) =>
-    !/studio|animation|comics?|entertainment|media|webtoon|works|team/i.test(n) &&
-    (/^[A-Za-z.'\-]+( [A-Za-z.'\-]+)+$/.test(n) || /^[가-힣]{2,5} [가-힣]{1,5}$/.test(n)));
+    !/studio|animation|comics?|cartoon|toon|entertainment|media|works|team|group|production|company/i.test(n) &&
+    (/^[A-Za-z.'\-]+( [A-Za-z.'\-]+)+$/.test(n) ||
+      (/^[가-힣]{2,5} [가-힣]{1,5}$/.test(n) && noBatchimExceptN(n.replace(' ', '')))));
 }
 
 // http(s)로 시작하는 주소만 링크로 씀 (이상한 주소가 실행되지 않게)
@@ -241,9 +255,14 @@ const PLATFORM_BADGES = [
   { match: /미스터블루|mrblue/i, label: '미블', cls: 'mrblue' },
 ];
 
+// 플랫폼이 여러 곳이면 2곳까지 (같은 회사는 하나로: 네이버웹툰 + 네이버 시리즈 → 네이버)
 function platformBadge(platform) {
-  const found = PLATFORM_BADGES.find((p) => p.match.test(platform || ''));
-  return found ? `<span class="badge pf-${found.cls}">${found.label}</span>` : '';
+  const brands = [];
+  for (const name of String(platform || '').split(',')) {
+    const found = PLATFORM_BADGES.find((p) => p.match.test(name));
+    if (found && !brands.includes(found)) brands.push(found);
+  }
+  return brands.slice(0, 2).map((b) => `<span class="badge pf-${b.cls}">${b.label}</span>`).join('');
 }
 
 // 리스트 한 줄 (서재 리스트, 홈 최근 기록, 캘린더에서 같이 씀)
@@ -931,9 +950,8 @@ async function searchPlatform(more = false, fromFinder = false) {
     const res = finder ? await FINDER_FETCH[t.source](finder.genre, t.page, finder.types) : await fetchSearch(t.source, q, t.page);
     res.items.forEach((item, i) => {
       item.rank = t.page * 100 + i;
-      // 일본 만화를 화 단위로 나눠 연재하는 작품은 플랫폼이 웹툰으로 보내서, 작가 이름으로 만화로 바꿈
-      // (네이버웹툰은 일본 만화를 연재하지 않아서 제외)
-      if (item.type === 'webtoon' && !t.source.startsWith('naver') && looksJapaneseAuthor(String(item.author || '').split(/[,/]/))) {
+      // 일본 만화를 화 단위로 나눠 연재하는 작품은 플랫폼이 웹툰으로 보내서, 작가 이름으로 만화로 바꿈 (모든 플랫폼)
+      if (item.type === 'webtoon' && looksJapaneseAuthor(String(item.author || '').split(/[,/]/))) {
         item.type = 'comic';
         if (!item.unit) item.unit = '화'; // 화 단위로 연재하는 작품이라 '권'이 아니라 '화'
       }
@@ -1307,10 +1325,22 @@ function showSearchIntro() {
   const recent = recentSearches();
   $('recentBlock').hidden = !recent.length;
   $('recentKeywords').innerHTML = recent.map((k) => `
-    <span class="chip">
+    <span class="chip chip-recent">
       <button type="button" class="chip-word" data-q="${esc(k)}">${esc(k)}</button>
-      <button type="button" class="chip-x" data-remove="${esc(k)}" aria-label="${esc(k)} 지우기">×</button>
+      <button type="button" class="chip-x" data-remove="${esc(k)}" aria-label="${esc(k)} 지우기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
     </span>`).join('');
+
+  // 장르별 검색: 장르 아이콘 (작품 찾기의 장르와 같음)
+  $('genreIcons').innerHTML = FINDER_GENRES.map((g) => {
+    const icon = GENRE_ICONS[g.name] || GENRE_ICONS.판타지;
+    return `
+      <button type="button" class="genre-icon" data-genre="${esc(g.name)}" style="--g:${icon.color}">
+        <span class="gi-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon.path}</svg></span>
+        <span class="gi-name">${esc(g.name)}</span>
+      </button>`;
+  }).join('');
 
   // 4점 이상 준 작품의 작가 (최대 6명)
   const authors = [...new Set(works.filter((w) => w.rating >= 4 && w.author)
@@ -1322,8 +1352,26 @@ function showSearchIntro() {
     `<button type="button" class="chip chip-word" data-q="${esc(a)}">${esc(a)}</button>`).join('');
 
   $('suggestKeywords').innerHTML = SUGGEST_KEYWORDS.map((k) =>
-    `<button type="button" class="chip chip-word" data-q="${esc(k)}"># ${esc(k)}</button>`).join('');
+    `<button type="button" class="chip chip-word" data-q="${esc(k)}">${esc(k)}</button>`).join('');
 }
+
+// 장르별 검색 아이콘: 장르마다 색 + 직접 그린 선 그림 (24x24)
+const GENRE_ICONS = {
+  로맨스: { color: '#e8456b', path: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>' },
+  로판: { color: '#9b51e0', path: '<path d="M4 8l4 4 4-7 4 7 4-4-2 11H6z"/>' },
+  판타지: { color: '#4a6cf7', path: '<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/><path d="M19 3v3M17.5 4.5h3"/>' },
+  현판: { color: '#1b8ad6', path: '<path d="M3 21h18M5 21V10h5v11M10 21V4h9v17M13 8h3M13 12h3M13 16h3"/>' },
+  무협: { color: '#9a6a3a', path: '<path d="M20 4 9 15M14 4h6v6M7 13l4 4M4 20l3-3"/>' },
+  액션: { color: '#f06b1a', path: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>' },
+  드라마: { color: '#2f9e5c', path: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>' },
+  스릴러: { color: '#4b4f63', path: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>' },
+  '일상·개그': { color: '#d99a00', path: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9.5h0M15 9.5h0"/>' },
+  감성: { color: '#2a9d8f', path: '<path d="M20 14A8 8 0 1 1 10 4a6 6 0 0 0 10 10z"/>' },
+  학원: { color: '#3b66d1', path: '<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c3 2 9 2 12 0v-5"/>' },
+  스포츠: { color: '#2e9d47', path: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>' },
+  라노벨: { color: '#d0489a', path: '<path d="M4 19V5a2 2 0 0 1 2-2h14v16H6a2 2 0 0 0 0 4h14"/>' },
+  BL: { color: '#3a86ff', path: '<path d="M8 18s-5-3-5-7a3 3 0 0 1 5-2 3 3 0 0 1 5 2"/><path d="M16 21s-5-3-5-7a3 3 0 0 1 5-2 3 3 0 0 1 5 2c0 4-5 7-5 7z"/>' },
+};
 
 function runSearch(q) {
   q = q.trim();
@@ -1878,6 +1926,8 @@ function openOverlay(id) {
   if (overlayStack[overlayStack.length - 1] === id) return;
   $(id).hidden = false;
   overlayStack.push(id);
+  // 나중에 연 창이 항상 위에 (검색 → 작품 찾기 → 검색 결과처럼 순서가 바뀌어도)
+  $(id).style.zIndex = 30 + overlayStack.length;
   lockPage(true);
   history.pushState({ overlay: id }, '');
 }
@@ -1888,7 +1938,9 @@ function closeOverlay() {
 
 window.addEventListener('popstate', () => {
   const id = overlayStack.pop();
-  if (id) $(id).hidden = true;
+  // 같은 창이 아래에 또 열려 있으면(검색 → 작품 찾기 → 검색 결과) 닫지 않고 원래 높이로만 내림
+  if (id && overlayStack.includes(id)) $(id).style.zIndex = 30 + overlayStack.lastIndexOf(id) + 1;
+  else if (id) $(id).hidden = true;
   if (id === 'detailPage') detailState = null;
   if (!overlayStack.length) lockPage(false);
 });
@@ -2036,6 +2088,14 @@ function bindEvents() {
       showSearchIntro();
       return;
     }
+    // 장르 아이콘: 그 장르만 골라서 바로 작품 찾기 / "장르별 검색 >": 작품 찾기 화면
+    const genre = e.target.closest('[data-genre]');
+    if (genre) {
+      finderPick = { genre: genre.dataset.genre, types: new Set(), platforms: new Set(), ongoing: '' };
+      runFinder();
+      return;
+    }
+    if (e.target.closest('#genreMore')) { openFinder(); return; }
     const word = e.target.closest('[data-q]');
     if (word) runSearch(word.dataset.q);
     if (e.target.closest('#recentClear')) { saveRecentSearches([]); showSearchIntro(); }
@@ -2261,6 +2321,7 @@ async function start() {
       for (const w of old) await saveOne(fixType(w));
       works = works.map(fixType);
     }
+    await fixSavedManga();
   } catch (err) {
     alert('저장소를 열 수 없어요. 시크릿 모드라면 일반 창에서 열어 주세요.');
   }

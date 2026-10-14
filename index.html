@@ -17,7 +17,7 @@
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
   <!-- 글꼴: Pretendard -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=44">
+  <link rel="stylesheet" href="style.css?v=47">
 </head>
 <body>
   <main>
@@ -201,13 +201,17 @@
       <button type="button" id="searchBack" class="back-btn" aria-label="뒤로">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg>
       </button>
+      <!-- 둥근 검색창 (오른쪽 돋보기를 눌러도 검색) -->
       <form id="searchForm" class="search-form">
-        <input type="search" id="s-query" placeholder="작품 제목이나 작가 이름" enterkeyhint="search" autocomplete="off" aria-label="작품 검색">
+        <input type="search" id="s-query" placeholder="작품 제목, 작가를 검색하세요" enterkeyhint="search" autocomplete="off" aria-label="작품 검색">
+        <button type="submit" class="search-go" aria-label="검색">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        </button>
       </form>
     </div>
 
-    <!-- 검색하기 전: 최근 검색어 / 좋아한 작가 / 추천 키워드 -->
-    <div id="searchIntro" class="overlay-body">
+    <!-- 검색하기 전: 최근 검색어 / 장르별 검색 / 키워드 검색 / 좋아한 작가 -->
+    <div id="searchIntro" class="overlay-body search-intro">
       <div id="recentBlock">
         <div class="sec-head">
           <h2>최근 검색어</h2>
@@ -215,12 +219,19 @@
         </div>
         <div id="recentKeywords" class="chips"></div>
       </div>
+      <!-- 장르 아이콘을 누르면 그 장르로 작품 찾기, 제목을 누르면 작품 찾기 화면 -->
+      <div class="sec-head">
+        <button type="button" id="genreMore" class="sec-link">장르별 검색
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+        </button>
+      </div>
+      <div id="genreIcons" class="genre-row"></div>
+      <div class="sec-head"><h2>키워드 검색</h2></div>
+      <div id="suggestKeywords" class="chips"></div>
       <div id="authorBlock">
         <div class="sec-head"><h2>좋아한 작가</h2></div>
         <div id="authorKeywords" class="chips"></div>
       </div>
-      <div class="sec-head"><h2>추천 키워드</h2></div>
-      <div id="suggestKeywords" class="chips"></div>
       <button type="button" id="manualAdd" class="manual-add">찾는 작품이 없나요? <b>직접 입력하기</b></button>
     </div>
 
@@ -436,6 +447,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=44"></script>
+  <script src="app.js?v=47"></script>
 </body>
 </html>

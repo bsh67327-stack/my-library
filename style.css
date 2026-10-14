@@ -586,10 +586,55 @@ body.overlay-open { position: fixed; left: 0; right: 0; overflow: hidden; }
 .finder-reset svg { width: 17px; height: 17px; }
 .finder-bar .primary { padding: 14px; border-radius: 14px; font-size: 1rem; }
 
-/* 검색 화면 */
-.search-form { flex: 1; }
-.search-form input { width: 100%; padding: 11px 14px; border-radius: 12px; }
-#searchIntro .sec-head { margin-top: 18px; }
+/* 검색 화면: 둥근 검색창 (돋보기는 오른쪽) */
+.search-form { flex: 1; position: relative; }
+.search-form input {
+  width: 100%; padding: 13px 48px 13px 18px; border: none; border-radius: 999px;
+  background: var(--surface-2); font-size: 16px;
+}
+.search-form input:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.search-form input::-webkit-search-cancel-button { display: none; }
+.search-go {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; width: 38px; height: 38px; padding: 0;
+  border: none; border-radius: 50%; background: none; color: var(--text);
+}
+.search-go svg { width: 22px; height: 22px; }
+
+/* 검색하기 전 화면: 제목은 굵게, 칸 사이는 넉넉하게 */
+.search-intro { padding-bottom: 30px; }
+#searchIntro .sec-head { margin-top: 30px; margin-bottom: 14px; }
+#searchIntro .sec-head:first-child, #searchIntro > div:first-child .sec-head { margin-top: 14px; }
+#searchPage #searchIntro .sec-head h2 { font-size: 1.1rem; font-weight: 700; }
+.sec-link {
+  display: inline-flex; align-items: center; gap: 2px; padding: 0; border: none; background: none;
+  color: var(--text); font-size: 1.1rem; font-weight: 700;
+}
+.sec-link svg { width: 20px; height: 20px; color: var(--sub); }
+/* 최근 검색어: 오렌지 테두리 칩 */
+.chip.chip-recent { border-color: var(--accent); background: var(--surface); color: var(--accent-strong); padding: 0 6px 0 0; }
+.chip-recent .chip-word { padding: 8px 2px 8px 16px; font-size: 0.92rem; }
+.chip-recent .chip-x { display: grid; place-items: center; padding: 6px; color: var(--accent-strong); }
+.chip-recent .chip-x svg { width: 15px; height: 15px; }
+/* 키워드·작가: 회색 칩 */
+#searchIntro button.chip.chip-word { padding: 9px 18px; border: none; background: var(--surface-2); color: var(--sub); font-size: 0.92rem; }
+/* 장르별 검색: 옆으로 넘기는 장르 아이콘 */
+.genre-row {
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  margin: 0 -20px; padding: 2px 20px 4px;
+}
+.genre-row::-webkit-scrollbar { display: none; }
+.genre-icon {
+  flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  width: 64px; padding: 0; border: none; background: none; font-weight: 400;
+}
+.gi-badge {
+  display: grid; place-items: center; width: 54px; height: 54px; border-radius: 18px;
+  background: color-mix(in srgb, var(--g) 13%, var(--bg)); color: var(--g);
+}
+.gi-badge svg { width: 26px; height: 26px; }
+.genre-icon:active .gi-badge { transform: scale(0.95); }
+.gi-name { font-size: 0.84rem; color: var(--sub); white-space: nowrap; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   display: inline-flex; align-items: center;
@@ -639,7 +684,7 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 .in-library { flex: none; align-self: flex-start; margin-top: 4px; font-size: 0.7rem; padding: 3px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-strong); }
 .s-more { width: 100%; padding: 12px; margin-top: 14px; font-weight: 400; }
 /* 검색 화면 제목들도 굵지 않게 */
-#searchPage .sec-head h2 { font-size: 1rem; font-weight: 500; }
+#searchPage .s-results .sec-head h2 { font-size: 1rem; font-weight: 500; }
 .manual-add b { font-weight: 500; }
 
 /* ===== 작품 정보 화면 ===== */
