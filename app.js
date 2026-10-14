@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -376,10 +376,10 @@ function setNickname(name) {
 let nicknameNow = getNickname();
 const displayName = () => nicknameNow || '독자';
 
-function openNickname() {
+// 설정 화면 채우기 (닉네임 입력칸, 버전)
+function renderSettings() {
   $('nickInput').value = nicknameNow;
-  $('nickDialog').showModal();
-  $('nickInput').focus();
+  $('settingsVersion').textContent = `v${APP_VERSION}`;
 }
 
 // 홈 "OO님을 위한 추천 작품": 내 서재 기록만으로 고른 추천 (밖으로 요청을 보내지 않음)
@@ -547,6 +547,9 @@ function setViewMode(mode) {
   $('libraryView').hidden = mode !== 'library';
   $('feedView').hidden = mode !== 'feed';
   $('calendarView').hidden = mode !== 'calendar';
+  $('settingsView').hidden = mode !== 'settings';
+  $('addBtn').hidden = mode === 'settings'; // 설정 화면에는 ＋ 버튼이 필요 없음
+  if (mode === 'settings') renderSettings();
   if (mode === 'calendar') {
     // 오늘 추가한 작품이 있으면 오늘을 선택해서 보여줌
     const today = dateKey(Date.now());
@@ -586,6 +589,8 @@ function openEditor(work) {
   formCoverSource = work?.coverSource ? { url: work.cover, name: work.coverSource } : null;
 
   $('editor').showModal();
+  // 창이 열리면 첫 입력칸에 자동으로 커서가 가서 키보드가 바로 올라오므로, 직접 누를 때까지 커서를 빼 둠
+  document.activeElement?.blur();
   $('editor').scrollTop = 0;
 }
 
@@ -1666,35 +1671,24 @@ function lockPage(lock) {
   }
 }
 
-// 키보드가 올라오면 화면에 실제로 보이는 영역(visualViewport)이 줄어듦
-// → 아래에서 올라오는 창(작품 입력·닉네임 등)은 그 크기를 CSS 변수로 받아서 키보드 바로 위에 붙음
-// (전체 화면 창은 고정이라 이 값을 쓰지 않음 - 키보드가 그 위에 겹쳐서 올라옴)
-function syncViewport() {
-  const vv = window.visualViewport;
-  if (!vv) return;
-  const root = document.documentElement.style;
-  root.setProperty('--vv-height', `${vv.height}px`);
-  root.setProperty('--vv-top', `${vv.offsetTop}px`);
-}
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', syncViewport);
-  window.visualViewport.addEventListener('scroll', syncViewport);
-  syncViewport();
-}
 
-// 전체 화면 창의 입력칸을 누를 때, 아이폰이 입력칸을 보이게 하려고 화면을 밀어 올리지 않게 함
-// (터치를 직접 받아서 "화면을 움직이지 말고" 입력칸에 커서만 넣음)
+// 모든 입력칸: 누를 때 아이폰이 입력칸을 보이게 하려고 화면을 밀어 올리지 않게 함
+// (터치를 직접 받아서 "화면을 움직이지 말고" 입력칸에 커서만 넣음 → 키보드는 화면 위에 겹쳐서 올라옴)
+const TYPING_INPUTS = ['text', 'search', 'number', 'url', 'email', 'tel', 'password'];
+const isTypingField = (el) => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && TYPING_INPUTS.includes(el.type)));
+
 document.addEventListener('touchend', (e) => {
-  const field = e.target.closest('.overlay textarea, .overlay input[type="search"]');
-  if (!field || document.activeElement === field) return; // 이미 쓰는 중이면 커서 옮기기 등은 그대로
+  const field = e.target.closest('input, textarea');
+  if (!isTypingField(field) || document.activeElement === field) return; // 이미 쓰는 중이면 커서 옮기기 등은 그대로
   e.preventDefault();
   field.focus({ preventScroll: true });
 }, { passive: false });
 
-// 그래도 밀려 올라갔으면 (오래된 아이폰 등) 바로 제자리로
+// 그래도 밀려 올라갔으면 (오래된 아이폰 등) 바로 제자리로 - 전체 화면 창이나 아래에서 올라오는 창이 열려 있을 때
 if (window.visualViewport) {
   window.visualViewport.addEventListener('scroll', () => {
-    if (overlayStack.length && window.visualViewport.offsetTop > 0) window.scrollTo(0, 0);
+    const fixedOpen = overlayStack.length || document.querySelector('dialog[open]');
+    if (fixedOpen && window.visualViewport.offsetTop > 0) window.scrollTo(0, 0);
   });
 }
 
@@ -1893,12 +1887,7 @@ function bindEvents() {
     render();
   });
 
-  // 메뉴 바깥을 누르면 메뉴 닫기
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('#menu')) $('menu').open = false;
-  });
-
-  // 홈 / 서재 / 캘린더 전환
+  // 홈 / 서재 / 피드 / 캘린더 / 설정 전환
   $('viewTabs').addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (btn) setViewMode(btn.dataset.view);
@@ -1970,19 +1959,19 @@ function bindEvents() {
     setFormCover('');
   });
 
-  // 닉네임 설정
-  $('nickBtn').addEventListener('click', () => { $('menu').open = false; openNickname(); });
-  $('nickCancel').addEventListener('click', () => $('nickDialog').close());
+  // 설정: 닉네임 저장
   $('nickForm').addEventListener('submit', (e) => {
     e.preventDefault();
     setNickname($('nickInput').value.trim().slice(0, 12));
-    $('nickDialog').close();
+    $('nickInput').value = nicknameNow;
+    $('nickInput').blur(); // 키보드 내리기
     render();
+    toast('닉네임을 저장했어요');
   });
 
-  // 백업 / 복원
-  $('exportBtn').addEventListener('click', () => { $('menu').open = false; exportBackup(); });
-  $('importBtn').addEventListener('click', () => { $('menu').open = false; $('importFile').click(); });
+  // 설정: 백업 / 복원
+  $('exportBtn').addEventListener('click', exportBackup);
+  $('importBtn').addEventListener('click', () => $('importFile').click());
   $('importFile').addEventListener('change', (e) => {
     if (e.target.files[0]) importBackup(e.target.files[0]);
     e.target.value = '';

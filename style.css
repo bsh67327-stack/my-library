@@ -71,22 +71,23 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
 .version { align-self: flex-end; margin-bottom: 4px; font-size: 0.66rem; font-weight: 500; color: var(--muted); letter-spacing: 0; }
 .count { font-size: 1rem; font-weight: 700; color: var(--accent-strong); margin-left: 2px; }
 
-/* 더 보기 메뉴 (⋯) */
-.menu { position: relative; }
-.menu summary {
-  list-style: none; cursor: pointer; display: grid; place-items: center;
-  width: 36px; height: 36px; border-radius: 50%; color: var(--sub);
+/* ===== 설정 ===== */
+.set-title { margin: 22px 0 8px 4px; font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+.set-card { padding: 16px; border-radius: 16px; background: var(--surface-2); }
+.set-label { display: block; font-size: 0.98rem; font-weight: 700; color: var(--text); }
+.set-desc { margin-top: 3px; font-size: 0.8rem; color: var(--muted); }
+.nick-row { display: flex; gap: 8px; margin-top: 12px; }
+.nick-row input { flex: 1; min-width: 0; background-color: var(--surface); }
+.set-list { padding: 4px; display: flex; flex-direction: column; }
+.set-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  padding: 12px; border: none; border-radius: 12px; background: none;
 }
-.menu summary::-webkit-details-marker { display: none; }
-.menu summary svg { width: 20px; height: 20px; }
-.menu[open] summary { background: var(--surface-2); }
-.menu-pop {
-  position: absolute; right: 0; top: 42px; z-index: 20; min-width: 170px;
-  display: flex; flex-direction: column; padding: 6px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
-}
-.menu-pop button { background: none; text-align: left; padding: 10px 12px; border-radius: 9px; font-size: 0.92rem; }
-.menu-pop button:hover { background: var(--surface-2); }
+.set-item + .set-item { border-top: 1px solid var(--border); border-radius: 0 0 12px 12px; }
+.set-item-title { font-size: 0.95rem; color: var(--text); }
+.set-item-desc { font-size: 0.78rem; color: var(--muted); }
+.set-row { display: flex; justify-content: space-between; font-size: 0.95rem; }
+.set-value { color: var(--muted); }
 
 /* ===== 홈 ===== */
 /* 검색창처럼 보이는 버튼 (누르면 작품 추가 + 플랫폼 검색) */
@@ -479,7 +480,6 @@ dialog form h2 { font-size: 1.25rem; font-weight: 800; }
 /* 닉네임 설정 창 */
 .small-dialog { width: min(400px, calc(100% - 32px)); }
 .dialog-desc { margin-top: -8px; font-size: 0.86rem; color: var(--muted); }
-#nickInput { width: 100%; }
 label, .field { display: flex; flex-direction: column; gap: 6px; font-size: 0.84rem; font-weight: 600; color: var(--sub); }
 label input, label select { color: var(--text); font-weight: 400; }
 .field-label small { font-size: 0.74rem; font-weight: 400; color: var(--muted); }
@@ -831,12 +831,11 @@ dialog button:focus { outline: none; }
   form .row { grid-template-columns: 1fr; }
 
   /* 작품 추가/수정 창: 휴대폰에서는 아래에서 올라오는 시트 */
-  /* 키보드가 올라오면 키보드 바로 위에 붙음 (보이는 영역의 아래 끝에 맞춤) */
+  /* 화면 아래에 고정 - 키보드가 올라와도 창은 그대로 있고 키보드가 그 위에 겹쳐서 올라옴
+     (가려진 입력칸은 창 안을 밀어 올려서 보면 됨) */
   dialog, dialog.small-dialog {
-    width: 100%; max-width: 100%;
-    max-height: calc(var(--vv-height, 100%) - 16px);
-    margin: 0; top: auto;
-    bottom: calc(100% - var(--vv-top, 0px) - var(--vv-height, 100%));
+    width: 100%; max-width: 100%; max-height: 92dvh;
+    margin: auto 0 0;
     border-radius: 22px 22px 0 0;
   }
   dialog[open] { animation: sheet 0.25s ease-out; }

@@ -17,7 +17,7 @@
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
   <!-- 글꼴: Pretendard -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=33">
+  <link rel="stylesheet" href="style.css?v=34">
 </head>
 <body>
   <main>
@@ -25,18 +25,6 @@
     <section id="homeView">
       <header class="page-head">
         <h1><span class="wordmark" aria-label="TOONSO">TOO<em>N</em>SO</span><small id="appVersion" class="version"></small></h1>
-        <!-- 더 보기 메뉴 (닉네임 / 백업 / 복원) -->
-        <details class="menu" id="menu">
-          <summary aria-label="메뉴">
-            <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
-          </summary>
-          <div class="menu-pop">
-            <button id="nickBtn" type="button">닉네임 설정</button>
-            <button id="exportBtn" type="button">백업 파일 저장</button>
-            <button id="importBtn" type="button">백업 파일 불러오기</button>
-          </div>
-        </details>
-        <input type="file" id="importFile" accept="application/json,.json" hidden>
       </header>
 
       <!-- 누르면 작품 추가 창이 열리고 플랫폼 검색을 바로 할 수 있음 -->
@@ -141,6 +129,41 @@
       </div>
       <div id="calGrid" class="cal-grid"></div>
       <div id="calDayList"></div>
+    </section>
+
+    <!-- ===== 설정: 프로필(닉네임) / 데이터(백업·복원) / 앱 정보 ===== -->
+    <section id="settingsView" hidden>
+      <header class="page-head">
+        <h1>설정</h1>
+      </header>
+
+      <h2 class="set-title">프로필</h2>
+      <div class="set-card">
+        <label class="set-label" for="nickInput">닉네임</label>
+        <p class="set-desc">홈 추천과 피드에 보이는 이름이에요.</p>
+        <form id="nickForm" class="nick-row">
+          <input id="nickInput" maxlength="12" placeholder="닉네임 (12자까지)" autocomplete="off" enterkeyhint="done">
+          <button type="submit" class="primary">저장</button>
+        </form>
+      </div>
+
+      <h2 class="set-title">데이터</h2>
+      <div class="set-card set-list">
+        <button type="button" id="exportBtn" class="set-item">
+          <span class="set-item-title">백업 파일 저장</span>
+          <span class="set-item-desc">내 기록을 파일로 내려받아요</span>
+        </button>
+        <button type="button" id="importBtn" class="set-item">
+          <span class="set-item-title">백업 파일 불러오기</span>
+          <span class="set-item-desc">저장해 둔 백업 파일로 기록을 되돌려요</span>
+        </button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </div>
+
+      <h2 class="set-title">앱 정보</h2>
+      <div class="set-card">
+        <div class="set-row"><span>버전</span><span id="settingsVersion" class="set-value"></span></div>
+      </div>
     </section>
   </main>
 
@@ -255,7 +278,7 @@
   <!-- 화면 아래에 잠깐 뜨는 알림 -->
   <div id="toast" class="toast" role="status" hidden></div>
 
-  <!-- ===== 아래 탭바: 홈 / 서재 / 피드 / 캘린더 ===== -->
+  <!-- ===== 아래 탭바: 홈 / 서재 / 피드 / 캘린더 / 설정 ===== -->
   <nav class="tabbar" id="viewTabs">
     <button data-view="home" class="active">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/></svg>
@@ -273,21 +296,11 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
       <span>캘린더</span>
     </button>
+    <button data-view="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>설정</span>
+    </button>
   </nav>
-
-  <!-- ===== 닉네임 설정 창 ===== -->
-  <dialog id="nickDialog" class="small-dialog">
-    <form id="nickForm">
-      <h2>닉네임 설정</h2>
-      <p class="dialog-desc">홈 추천과 피드에 보이는 이름이에요.</p>
-      <input id="nickInput" maxlength="12" placeholder="닉네임 (12자까지)" autocomplete="off" aria-label="닉네임">
-      <div class="form-actions">
-        <span class="spacer"></span>
-        <button type="button" id="nickCancel" class="ghost">취소</button>
-        <button type="submit" class="primary">저장</button>
-      </div>
-    </form>
-  </dialog>
 
   <!-- ===== 작품 추가/수정 창 ===== -->
   <dialog id="editor">
@@ -394,6 +407,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=33"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>
