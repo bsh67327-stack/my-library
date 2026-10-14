@@ -1,13 +1,16 @@
 // =====================================================
-// 툰앤소 - 웹툰/웹소설/만화책 기록 앱
+// 툰앤소 - 웹툰/웹소설/만화 기록 앱
 // =====================================================
 
 // ----- 1. 기본 설정 -----
-const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', manga: '일본만화' };
+const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화' };
+
+// 예전 버전의 '일본만화'(manga)는 '만화'로 합침
+const fixType = (w) => (w && w.type === 'manga' ? { ...w, type: 'comic' } : w);
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 38;
+const APP_VERSION = 40;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -78,12 +81,12 @@ function esc(text) {
   ));
 }
 
-// 회차 단위: 플랫폼이 알려준 단위(unit)가 있으면 그걸 쓰고, 없으면 만화책은 '권', 나머지는 '화'
+// 회차 단위: 플랫폼이 알려준 단위(unit)가 있으면 그걸 쓰고, 없으면 만화는 '권', 나머지는 '화'
 function unitOf(type, unit) {
   return unit || (type === 'comic' ? '권' : '화');
 }
 
-// 작가 이름이 모두 "Koyoharu Gotouge"처럼 두 단어 이상의 영문이면 일본 만화로 추정
+// 작가 이름이 모두 "Koyoharu Gotouge"처럼 두 단어 이상의 영문이면 일본 만화로 추정 (→ 만화)
 // ("SIU", "ARCHE"처럼 한 단어 영문 필명은 한국 웹툰에도 많아서 제외)
 function looksJapaneseAuthor(names) {
   return names.length > 0 && names.every((n) => /^[A-Za-z.'\-]+( [A-Za-z.'\-]+)+$/.test(n.trim()));
@@ -694,11 +697,10 @@ function parseSeries(html, kind) {
     // 같은 이름이 두 번 나오는 경우가 많아서(글/그림 작가) 중복 제거
     const authors = [...new Set([...li.querySelectorAll('.author')].map((a) => a.textContent.trim()))];
 
-    // 종류 판단: 웹소설 → 웹소설 / 작가가 영문 이름 → 일본만화 / 권 단위·[단행본] → 만화책 / 나머지 → 웹툰
+    // 종류 판단: 웹소설 → 웹소설 / 작가가 영문 이름(일본 만화)·권 단위·[단행본] → 만화 / 나머지 → 웹툰
     let type = 'webtoon';
     if (kind === 'novel') type = 'webnovel';
-    else if (looksJapaneseAuthor(authors)) type = 'manga';
-    else if (unit === '권' || /\[단행본\]/.test(text)) type = 'comic';
+    else if (looksJapaneseAuthor(authors) || unit === '권' || /\[단행본\]/.test(text)) type = 'comic';
 
     return {
       sourceId: link.getAttribute('href').match(/productNo=(\d+)/)[1],
@@ -751,6 +753,8 @@ function parseMrblue(html) {
   return [...doc.querySelectorAll('#listBox li[data-pid]')].map((li) => {
     const link = li.querySelector('.tit a');
     if (!link) return null;
+    // 인문·자기계발 같은 일반 도서(장르 "일반 > 일반도서")는 이 앱에서 다루지 않아서 뺌
+    if (/일반도서/.test(li.querySelector('.genre')?.textContent || '')) return null;
     const category = li.querySelector('.label-category')?.textContent.trim() || ''; // 웹툰 / 만화 / 소설
     // 제목 링크 안에 [만화] 표시가 같이 있어서 글자 부분만 꺼냄
     const title = [...link.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE)
@@ -813,7 +817,8 @@ const SEARCH_SOURCES = {
     platform: '미스터블루',
     format: 'html',
     parse: parseMrblue,
-    hasMore: (html, page, items) => items.length >= 120, // 한 페이지에 120개씩
+    // 한 페이지에 120개씩 (일반 도서를 뺀 개수가 아니라 원래 목록 개수로 판단)
+    hasMore: (html) => (html.match(/<li[^>]*data-pid=/g) || []).length >= 120,
     // 작품 소개는 검색 결과에 없어서 작품 페이지에서 꺼내 옴 (검색 서버가 소개 글만 보내 줌)
     fetchInfo: async (item) => {
       let path = '';
@@ -860,13 +865,14 @@ const SEARCH_SOURCES = {
   // 리디는 검색 요청을 막고 있어서(403) 검색에서 뺌 - 리디 링크는 직접 추가할 수 있음
   kakao: {
     platform: '카카오페이지',
-    parse: (data) => (data.result?.list || []).map((s) => ({
+    // 카카오페이지의 '책'(인문·자기계발 등 일반 도서)은 이 앱에서 다루지 않아서 뺌
+    parse: (data) => (data.result?.list || []).filter((s) => s.category !== '책').map((s) => ({
       sourceId: s.series_id,
       title: s.title,
       author: s.authors,
       cover: `https://page-images.kakaoentcdn.com/download/resource?kid=${s.thumbnail}&filename=th3`,
-      // 카카오페이지가 일본 만화로 표시한 작품(is_manga)은 일본만화로
-      type: s.operator_property?.is_manga ? 'manga' : s.category === '웹툰' ? 'webtoon' : 'webnovel',
+      // 카카오페이지가 일본 만화로 표시한 작품(is_manga)은 만화로
+      type: s.operator_property?.is_manga ? 'comic' : s.category === '웹툰' ? 'webtoon' : 'webnovel',
       note: s.category || '',
       genre: s.sub_category || '',
       // on_issue: Y = 연재중, N = 완결 (P 등 다른 값은 뜻이 확실하지 않아서 비워 둠)
@@ -1791,7 +1797,7 @@ async function importBackup(file) {
     const list = Array.isArray(data) ? data : data.works;
     if (!Array.isArray(list)) throw new Error('형식 오류');
 
-    const valid = list.filter((w) => w && w.id && w.title && TYPES[w.type] && STATUSES[w.status]);
+    const valid = list.map(fixType).filter((w) => w && w.id && w.title && TYPES[w.type] && STATUSES[w.status]);
     if (!confirm(`백업 파일에서 ${valid.length}개 작품을 불러올게요.\n같은 작품이 이미 있으면 백업 내용으로 바뀌어요.`)) return;
 
     for (const w of valid) await saveOne(w);
@@ -2076,6 +2082,12 @@ async function start() {
   try {
     db = await openDB();
     works = await loadAll();
+    // 예전에 '일본만화'로 담은 작품은 '만화'로 바꿔서 저장
+    const old = works.filter((w) => w.type === 'manga');
+    if (old.length) {
+      for (const w of old) await saveOne(fixType(w));
+      works = works.map(fixType);
+    }
   } catch (err) {
     alert('저장소를 열 수 없어요. 시크릿 모드라면 일반 창에서 열어 주세요.');
   }

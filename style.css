@@ -308,27 +308,31 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
 /* 원래 플랫폼으로 가는 링크 (리스트: 아이콘만, 입력 창: 글자) */
 .go-links { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .go-link { font-size: 0.74rem; font-weight: 600; color: var(--muted); text-decoration: none; white-space: nowrap; }
-.go-links .pf-icon { width: 20px; height: 20px; font-size: 0.66rem; border-radius: 6px; }
+.go-links .pf-icon { width: 20px; height: 20px; font-size: 0.66rem; }
 
-/* 플랫폼 아이콘: 플랫폼 색 + 첫 글자 */
+/* 플랫폼 아이콘: 플랫폼 색 + 첫 글자 (공식 로고가 아니라 직접 그린 표시)
+   앱 아이콘처럼 둥근 사각형 + 위쪽이 살짝 밝은 빛 + 얇은 테두리 */
 .pf-icon {
   flex: none; display: inline-grid; place-items: center;
-  width: 22px; height: 22px; border-radius: 7px;
-  font-size: 0.72rem; font-weight: 900; font-style: normal; letter-spacing: 0; color: #fff;
-  background: #8e8e93;
+  width: 22px; height: 22px; border-radius: 30%;
+  font-size: 0.72rem; font-weight: 800; font-style: normal; line-height: 1; letter-spacing: 0; color: #fff;
+  background-color: #8e8e93;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, 0.06));
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.08);
 }
-.pf-naver { background: #00dc64; }
-.pf-naver-ch { background: #00dc64; color: #0b3d20; }
-.pf-series { background: #00c73c; }
-.pf-kakaowebtoon { background: #000; }
-.pf-kakaopage { background: #ffd200; color: #1e1e1e; }
-.pf-mrblue { background: #1a6aff; }
-.pf-ridi { background: #1f8ce6; }
-.pf-lezhin { background: #e5243b; }
-.pf-munpia { background: #2b5bd7; }
-.pf-novelpia { background: #5b4bff; }
+.pf-naver { background-color: #00c85a; }
+.pf-naver-ch { background-color: #e6f9ee; color: #00a64b; }
+.pf-series { background-color: #1fb85a; }
+.pf-kakaowebtoon { background-color: #1e1e1e; }
+.pf-kakaopage { background-color: #ffd43b; color: #2b2b2b; }
+.pf-mrblue { background-color: #2f6bff; }
+.pf-ridi { background-color: #1f8ce6; }
+.pf-lezhin { background-color: #e5243b; }
+.pf-munpia { background-color: #2b5bd7; }
+.pf-novelpia { background-color: #5b4bff; }
 @media (prefers-color-scheme: dark) {
-  .pf-kakaowebtoon { background: #fff; color: #000; }
+  .pf-kakaowebtoon { background-color: #f2f2f2; color: #111; }
+  .pf-naver-ch { background-color: #12331f; color: #3ddc84; }
 }
 
 .link-list { list-style: none; margin: 4px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -582,7 +586,7 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 .s-item b { font-size: 1rem; font-weight: 500; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .s-item small { color: var(--muted); font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-icons { display: flex; gap: 4px; margin-top: 6px; }
-.pf-icons .pf-icon { width: 20px; height: 20px; font-size: 0.64rem; border-radius: 6px; }
+.pf-icons .pf-icon { width: 20px; height: 20px; font-size: 0.64rem; }
 .in-library { flex: none; align-self: flex-start; margin-top: 4px; font-size: 0.7rem; padding: 3px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-strong); }
 .s-more { width: 100%; padding: 12px; margin-top: 14px; font-weight: 400; }
 /* 검색 화면 제목들도 굵지 않게 */
@@ -671,7 +675,7 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
   padding: 8px 14px 8px 8px; border-radius: 12px;
   background: var(--surface-2); color: var(--text); font-size: 0.88rem; font-weight: 700;
 }
-.pf-btn .pf-icon { width: 28px; height: 28px; border-radius: 8px; font-size: 0.85rem; }
+.pf-btn .pf-icon { width: 30px; height: 30px; font-size: 0.9rem; }
 .detail-sec .progress { margin-top: 12px; }
 .detail-sec .progress .bar { max-width: none; }
 .detail-review {
