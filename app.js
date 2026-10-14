@@ -7,17 +7,23 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 18;
+const APP_VERSION = 21;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
 
-// 화면 상태: 홈/서재/캘린더 중 어떤 화면인지, 어떤 필터/정렬을 보고 있는지
-// layout: 서재를 쌓아보기(stack)로 볼지 리스트(list)로 볼지 (마지막에 고른 것을 기억)
+// 화면 상태: 홈/서재/피드/캘린더 중 어떤 화면인지, 어떤 필터/정렬을 보고 있는지
+// layout: 서재를 카드형(card) / 쌓아보기(stack) / 리스트(list) 중 무엇으로 볼지 (마지막에 고른 것을 기억)
+const LAYOUTS = ['card', 'stack', 'list'];
 const view = { mode: 'home', layout: savedLayout(), type: 'all', status: 'all', sort: 'updated', query: '' };
 
 function savedLayout() {
-  try { return localStorage.getItem('layout') === 'list' ? 'list' : 'stack'; } catch { return 'stack'; }
+  try {
+    const saved = localStorage.getItem('layout');
+    return LAYOUTS.includes(saved) ? saved : 'card';
+  } catch {
+    return 'card';
+  }
 }
 
 // 캘린더 상태: 보고 있는 연도/달(0=1월), 선택한 날짜('YYYY-MM-DD')
@@ -157,12 +163,14 @@ function render() {
   };
   list.sort(sorters[view.sort]);
 
-  // (3) 쌓아보기 / 리스트로 그리기
+  // (3) 카드형 / 쌓아보기 / 리스트로 그리기
   $('libCount').textContent = list.length || '';
   $('grid').className = `layout-${view.layout}`;
-  $('grid').innerHTML = view.layout === 'stack'
-    ? (list.length ? `<div class="stack">${list.map(spineHTML).join('')}</div>` : '')
-    : list.map(rowHTML).join('');
+  if (view.layout === 'stack') {
+    $('grid').innerHTML = list.length ? `<div class="stack">${list.map(spineHTML).join('')}</div>` : '';
+  } else {
+    $('grid').innerHTML = list.map(view.layout === 'card' ? cardHTML : rowHTML).join('');
+  }
   document.querySelectorAll('#layoutToggle button')
     .forEach((b) => b.classList.toggle('active', b.dataset.layout === view.layout));
 
@@ -173,7 +181,7 @@ function render() {
     ? '아직 기록한 작품이 없어요.<br>오른쪽 아래 <b>＋</b> 버튼으로 첫 작품을 추가해 보세요!'
     : '조건에 맞는 작품이 없어요.';
 
-  renderStats();
+  $('appVersion').textContent = `v${APP_VERSION}`;
   renderHome();
   renderFeed();
   if (view.mode === 'calendar') renderCalendar();
@@ -186,6 +194,48 @@ function coverHTML(w, cls) {
       <span class="cover-fallback">${esc(w.title)}</span>
       ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
     </div>`;
+}
+
+// 카드형: 한 줄에 표지 3개, 표지 왼쪽 위에 종류·플랫폼, 아래에 별점·제목·작가·상태·진행
+function cardHTML(w) {
+  return `
+    <article class="card tile" data-id="${esc(w.id)}">
+      <div class="cover">
+        <span class="cover-fallback">${esc(w.title)}</span>
+        ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+        ${badgesHTML(w)}
+      </div>
+      <div class="tile-info">
+        <span class="stars small">${starsHTML(w.rating)}</span>
+        <h3>${esc(w.title)}</h3>
+        ${w.author ? `<p class="author">${esc(w.author)}</p>` : ''}
+        <span class="status status-${w.status}">${STATUSES[w.status]}</span>
+        ${progressHTML(w)}
+      </div>
+    </article>`;
+}
+
+// 표지 왼쪽 위 배지: 종류(웹툰·웹소설 등) + 플랫폼 (카드형, 홈 "보는 중"에서 같이 씀)
+function badgesHTML(w) {
+  return `
+    <div class="badges">
+      <span class="badge">${TYPES[w.type]}</span>
+      ${platformBadge(w.platform)}
+    </div>`;
+}
+
+// 플랫폼 배지 (플랫폼 이름에 들어간 글자로 판단)
+const PLATFORM_BADGES = [
+  { match: /네이버|naver/i, label: '네이버', cls: 'naver' },
+  { match: /카카오|kakao/i, label: '카카오', cls: 'kakao' },
+  { match: /리디|ridi/i, label: '리디', cls: 'ridi' },
+  { match: /레진|lezhin/i, label: '레진', cls: 'lezhin' },
+  { match: /미스터블루|mrblue/i, label: '미블', cls: 'mrblue' },
+];
+
+function platformBadge(platform) {
+  const found = PLATFORM_BADGES.find((p) => p.match.test(platform || ''));
+  return found ? `<span class="badge pf-${found.cls}">${found.label}</span>` : '';
 }
 
 // 리스트 한 줄 (서재 리스트, 홈 최근 기록, 캘린더에서 같이 씀)
@@ -239,12 +289,11 @@ function spineHTML(w) {
 function miniHTML(w) {
   const unit = unitOf(w.type, w.unit);
   const seen = w.progress || 0;
-  const left = w.latest ? w.latest - seen : 0;
   return `
     <article class="card mini" data-id="${esc(w.id)}">
       <div class="mini-cover">
         ${coverHTML(w, 'cover')}
-        ${left > 0 ? `<span class="left-badge">안 본 ${left}${unit}</span>` : ''}
+        ${badgesHTML(w)}
       </div>
       <h3>${esc(w.title)}</h3>
       ${w.latest ? `<span class="bar"><i style="width:${Math.min(100, (seen / w.latest) * 100)}%"></i></span>` : ''}
@@ -263,27 +312,17 @@ function linksHTML(w) {
     `<a class="go-link" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.name)} ↗</a>`).join('')}</div>`;
 }
 
-// 리스트의 진행 막대 + "32 / 189화 · 안 본 157화" + +1 버튼 (최신 회차는 직접 입력한 값)
+// 진행 막대 + "32 / 189화" + +1 버튼 (최신 회차는 직접 입력한 값)
 function progressHTML(w) {
   if (!w.progress && !w.latest && w.status !== 'reading') return '';
   const unit = unitOf(w.type, w.unit);
   const seen = w.progress || 0;
-  const left = w.latest ? w.latest - seen : 0;
   return `
     <div class="progress">
       ${w.latest ? `<span class="bar"><i style="width:${Math.min(100, (seen / w.latest) * 100)}%"></i></span>` : ''}
-      <span class="progress-text">${seen}${w.latest ? ` / ${w.latest}` : ''}${unit}${w.status === 'reading' && left > 0 ? ` <em>· 안 본 ${left}${unit}</em>` : ''}</span>
+      <span class="progress-text">${seen}${w.latest ? ` / ${w.latest}` : ''}${unit}</span>
       ${w.status === 'reading' ? `<button type="button" class="plus-btn" data-id="${esc(w.id)}">+1</button>` : ''}
     </div>`;
-}
-
-function renderStats() {
-  const count = (status) => works.filter((w) => w.status === status).length;
-  const rated = works.filter((w) => w.rating > 0);
-  const avg = rated.length ? (rated.reduce((s, w) => s + w.rating, 0) / rated.length).toFixed(1) : '-';
-  const tiles = [['전체', works.length], ['보는 중', count('reading')], ['완독', count('done')], ['평균 평점', avg]];
-  $('stats').innerHTML = tiles.map(([label, value]) => `<div class="stat"><b>${value}</b><span>${label}</span></div>`).join('');
-  $('appVersion').textContent = `v${APP_VERSION}`;
 }
 
 // 홈: 보는 중인 작품(가로 목록) + 추천 + 최근에 기록한 작품 5개
@@ -295,6 +334,7 @@ function renderHome() {
     ? reading.map(miniHTML).join('')
     : '<p class="hint">보는 중인 작품이 없어요.</p>';
   const recs = recommendations();
+  $('recName').textContent = displayName();
   $('recSection').hidden = recs.length === 0;
   $('recRow').innerHTML = recs.map(recHTML).join('');
   $('recentList').innerHTML = works.length
@@ -302,7 +342,26 @@ function renderHome() {
     : '<p class="hint">아직 기록한 작품이 없어요.<br>위 검색창에서 첫 작품을 추가해 보세요!</p>';
 }
 
-// 홈 "이런 건 어때요?": 내 서재 기록만으로 고른 추천 (밖으로 요청을 보내지 않음)
+// 닉네임 (이 폰에 저장하고, 백업 파일에도 같이 넣음). 정하지 않았으면 "독자"
+function getNickname() {
+  try { return localStorage.getItem('nickname') || ''; } catch { return ''; }
+}
+
+function setNickname(name) {
+  try { localStorage.setItem('nickname', name); } catch { /* 저장 못 해도 지금 화면에는 반영 */ }
+  nicknameNow = name;
+}
+
+let nicknameNow = getNickname();
+const displayName = () => nicknameNow || '독자';
+
+function openNickname() {
+  $('nickInput').value = nicknameNow;
+  $('nickDialog').showModal();
+  $('nickInput').focus();
+}
+
+// 홈 "OO님을 위한 추천 작품": 내 서재 기록만으로 고른 추천 (밖으로 요청을 보내지 않음)
 const DAY = 24 * 60 * 60 * 1000;
 
 function recommendations() {
@@ -362,7 +421,7 @@ function feedHTML(w) {
     <article class="card post" data-id="${esc(w.id)}">
       <div class="post-head">
         <span class="avatar"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="9" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6z"/></svg></span>
-        <b>나</b>
+        <b>${esc(displayName())}</b>
         <span class="post-time">${timeAgo(w.updatedAt)}</span>
         <span class="status status-${w.status}">${STATUSES[w.status]}</span>
       </div>
@@ -957,7 +1016,7 @@ function addManualLink() {
 
 // ----- 7. 백업 / 복원 -----
 function exportBackup() {
-  const data = { app: 'my-library', version: 1, exportedAt: new Date().toISOString(), works };
+  const data = { app: 'my-library', version: 1, exportedAt: new Date().toISOString(), nickname: nicknameNow, works };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -976,6 +1035,7 @@ async function importBackup(file) {
     if (!confirm(`백업 파일에서 ${valid.length}개 작품을 불러올게요.\n같은 작품이 이미 있으면 백업 내용으로 바뀌어요.`)) return;
 
     for (const w of valid) await saveOne(w);
+    if (!nicknameNow && typeof data.nickname === 'string') setNickname(data.nickname.slice(0, 12));
     works = await loadAll();
     render();
     alert('복원이 끝났어요!');
@@ -1132,6 +1192,16 @@ function bindEvents() {
   });
 
   // 백업 / 복원
+  // 닉네임 설정
+  $('nickBtn').addEventListener('click', () => { $('menu').open = false; openNickname(); });
+  $('nickCancel').addEventListener('click', () => $('nickDialog').close());
+  $('nickForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    setNickname($('nickInput').value.trim().slice(0, 12));
+    $('nickDialog').close();
+    render();
+  });
+
   $('exportBtn').addEventListener('click', () => { $('menu').open = false; exportBackup(); });
   $('importBtn').addEventListener('click', () => { $('menu').open = false; $('importFile').click(); });
   $('importFile').addEventListener('change', (e) => {

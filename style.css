@@ -63,7 +63,9 @@ main { padding: 0 20px calc(var(--tabbar-h) + 96px + env(safe-area-inset-bottom)
   padding: calc(18px + env(safe-area-inset-top)) 0 14px;
 }
 h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; }
-.logo { width: 28px; height: 28px; border-radius: 8px; }
+/* 로고 글자 TOONSO (가운데 N만 오렌지) */
+.wordmark { font-size: 1.55rem; font-weight: 900; letter-spacing: 0.02em; }
+.wordmark em { font-style: normal; color: var(--accent); }
 .version { align-self: flex-end; margin-bottom: 4px; font-size: 0.66rem; font-weight: 500; color: var(--muted); letter-spacing: 0; }
 .count { font-size: 1rem; font-weight: 700; color: var(--accent-strong); margin-left: 2px; }
 
@@ -94,14 +96,7 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
 }
 .toolbar input[type="search"] { color: var(--text); padding-top: 11px; padding-bottom: 11px; }
 
-.stats {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  margin: 18px 0 30px; padding: 16px 0;
-  border-radius: 16px; background: var(--surface-2);
-}
-.stat { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.stat b { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; }
-.stat span { font-size: 0.74rem; color: var(--muted); }
+#homeSearch { margin: 4px 0 30px; }
 
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
 .sec-head h2 { font-size: 1.12rem; font-weight: 800; }
@@ -120,11 +115,6 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
 .mini h3 { margin-top: 8px; font-size: 0.86rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini .bar { margin-top: 6px; }
 .mini-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; font-size: 0.74rem; color: var(--muted); }
-.left-badge {
-  position: absolute; left: 6px; bottom: 6px;
-  font-size: 0.66rem; font-weight: 700; padding: 3px 7px; border-radius: 6px;
-  background: var(--accent); color: var(--accent-text);
-}
 
 /* 추천: 이유 한 줄 + 제목 */
 .rec { flex: none; width: 112px; scroll-snap-align: start; cursor: pointer; }
@@ -200,9 +190,41 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
   background-position: right 4px center; background-size: 13px;
 }
 .layout-toggle { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface-2); }
-.layout-toggle button { display: grid; place-items: center; width: 34px; height: 30px; padding: 0; border: none; border-radius: 8px; background: none; color: var(--muted); }
+.layout-toggle button { display: grid; place-items: center; width: 32px; height: 30px; padding: 0; border: none; border-radius: 8px; background: none; color: var(--muted); }
 .layout-toggle button svg { width: 18px; height: 18px; }
 .layout-toggle button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+
+/* ===== 서재: 카드형 (한 줄에 표지 3개) ===== */
+.layout-card {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px 12px; margin-top: 6px;
+}
+.tile { cursor: pointer; min-width: 0; }
+/* 표지 왼쪽 위: 종류·플랫폼 배지 */
+.badges {
+  position: absolute; top: 5px; left: 5px; right: 5px; z-index: 1;
+  display: flex; flex-wrap: wrap; gap: 3px;
+}
+.badge {
+  font-size: 0.6rem; font-weight: 700; padding: 2px 5px; border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6); color: #fff;
+}
+/* 플랫폼 색 */
+.pf-naver { background: #03c75a; }
+.pf-kakao { background: #ffcd00; color: #1e1e1e; }
+.pf-ridi { background: #1f8ce6; }
+.pf-lezhin { background: #e5243b; }
+.pf-mrblue { background: #2d5be3; }
+.tile-info { padding-top: 7px; }
+.tile-info .stars.small { font-size: 0.7rem; }
+.tile h3 { margin-top: 2px; font-size: 0.86rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .author { font-size: 0.72rem; color: var(--muted); }
+.tile .status { display: inline-block; margin-top: 5px; font-size: 0.62rem; padding: 1px 6px; }
+/* 카드가 좁아서 진행 막대는 한 줄 전체, 회차와 +1은 그 아래 */
+.tile .progress { flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
+.tile .progress .bar { flex-basis: 100%; max-width: none; }
+.tile .progress-text { flex: 1; font-size: 0.66rem; }
+.tile .plus-btn { font-size: 0.64rem; padding: 1px 7px; }
 
 /* ===== 서재: 쌓아보기 (책등을 쌓은 모양) ===== */
 .stack {
@@ -429,6 +451,10 @@ dialog[open] { animation: pop 0.2s ease-out; }
 dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
 form { display: flex; flex-direction: column; gap: 16px; padding: 22px 20px 0; }
 form h2 { font-size: 1.25rem; font-weight: 800; }
+/* 닉네임 설정 창 */
+.small-dialog { width: min(400px, calc(100% - 32px)); }
+.dialog-desc { margin-top: -8px; font-size: 0.86rem; color: var(--muted); }
+#nickInput { width: 100%; }
 label, .field { display: flex; flex-direction: column; gap: 6px; font-size: 0.84rem; font-weight: 600; color: var(--sub); }
 label input, label select { color: var(--text); font-weight: 400; }
 .field-label small { font-size: 0.74rem; font-weight: 400; color: var(--muted); }
