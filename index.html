@@ -16,7 +16,7 @@
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
   <!-- 글꼴: Pretendard -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
   <main>
@@ -184,11 +184,54 @@
       <button type="button" id="detailBack" class="back-btn" aria-label="뒤로">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg>
       </button>
-      <span class="spacer"></span>
-      <button type="button" id="detailEdit" class="text-btn">수정</button>
     </div>
     <div id="detailBody"></div>
   </section>
+
+  <!-- ===== 상태 선택 창 ===== -->
+  <dialog id="statusSheet" class="small-dialog sheet">
+    <form method="dialog">
+      <h2>상태 선택</h2>
+      <div id="statusList" class="status-list"></div>
+    </form>
+  </dialog>
+
+  <!-- ===== 별점 창 ===== -->
+  <dialog id="ratingSheet" class="small-dialog sheet">
+    <form id="ratingSheetForm">
+      <h2 id="ratingTitle">이 작품, 어떠셨나요?</h2>
+      <p id="ratingWork" class="dialog-desc"></p>
+      <div class="rating-sheet">
+        <span id="ratingSheetStars" class="stars huge"></span>
+        <p id="ratingWord" class="rating-word"></p>
+      </div>
+      <div class="form-actions">
+        <button type="button" id="ratingSheetClear" class="danger">지우기</button>
+        <span class="spacer"></span>
+        <button type="button" id="ratingSheetCancel" class="ghost">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ===== 한줄평 쓰기 창 ===== -->
+  <dialog id="reviewDialog" class="small-dialog">
+    <form id="reviewForm">
+      <h2>한줄평</h2>
+      <p id="reviewWork" class="dialog-desc"></p>
+      <textarea id="reviewInput" maxlength="100" rows="3" placeholder="이 작품을 한 줄로 표현하면?" aria-label="한줄평"></textarea>
+      <span id="reviewCount" class="char-count">0/100</span>
+      <div class="form-actions">
+        <button type="button" id="reviewDelete" class="danger">지우기</button>
+        <span class="spacer"></span>
+        <button type="button" id="reviewCancel" class="ghost">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 화면 아래에 잠깐 뜨는 알림 -->
+  <div id="toast" class="toast" role="status" hidden></div>
 
   <!-- ===== 아래 탭바: 홈 / 서재 / 피드 / 캘린더 ===== -->
   <nav class="tabbar" id="viewTabs">
@@ -329,6 +372,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=22"></script>
+  <script src="app.js?v=23"></script>
 </body>
 </html>

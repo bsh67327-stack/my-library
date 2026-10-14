@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -670,7 +670,8 @@ async function handleDelete() {
 // ----- 6. 플랫폼에서 작품 검색 -----
 
 // 플랫폼마다 결과 모양이 달라서, 같은 모양으로 바꿔줌
-// { sourceId(플랫폼의 작품 번호), title, author, cover, type, url(작품 페이지 주소, 번호로 못 만드는 곳만), note }
+// { sourceId(플랫폼의 작품 번호), title, author, cover, type, url(작품 페이지 주소, 번호로 못 만드는 곳만), note,
+//   desc(작품 소개 - 검색 결과에 있는 곳만), genre(장르 - 있는 곳만) }
 // 회차 수는 플랫폼에서 가져오지 않고 사용자가 직접 입력함
 
 // 네이버 시리즈: 검색 결과 웹페이지에서 작품 정보를 꺼냄
@@ -702,6 +703,7 @@ function parseSeries(html, kind) {
       type,
       unit,
       note: TYPES[type],
+      desc: (li.querySelector('.dsc')?.textContent || '').replace(/​/g, '').trim(),
     };
   }).filter(Boolean);
 }
@@ -752,6 +754,7 @@ const naverSource = (platform) => ({
     cover: w.thumbnailUrl,
     type: 'webtoon',
     note: '',
+    desc: w.synopsis || '',
   })),
   hasMore: (data, page) => page + 1 < (data.pageInfo?.totalPages || 0),
 });
@@ -781,13 +784,15 @@ const SEARCH_SOURCES = {
       // 카카오웹툰 주소에는 작품 번호 말고 영문 이름(seoId)도 들어감
       url: c.seoId ? `https://webtoon.kakao.com/content/${encodeURIComponent(c.seoId)}/${c.id}` : '',
       note: c.genre || '',
+      genre: c.genre || '',
+      desc: c.catchphraseThreeLines || c.catchphraseTwoLines || '', // 짧은 소개 (전체 소개는 fetchInfo로)
     })),
     hasMore: (data) => data.meta?.pagination ? !data.meta.pagination.last : false,
-    // 고른 작품의 대표 이미지를 불러옴
-    fetchCover: async (id) => {
+    // 작품 정보 화면을 열면 대표 이미지와 전체 작품 소개를 불러옴
+    fetchInfo: async (id) => {
       const info = await callServer('kakaoWebtoonInfo', String(id));
       const share = info.data?.sharingThumbnailImage;
-      return share ? `${share}.jpg` : '';
+      return { cover: share ? `${share}.jpg` : '', desc: info.data?.synopsis || '' };
     },
   },
   // 리디는 검색 요청을 막고 있어서(403) 검색에서 뺌 - 리디 링크는 직접 추가할 수 있음
@@ -801,6 +806,7 @@ const SEARCH_SOURCES = {
       // 카카오페이지가 일본 만화로 표시한 작품(is_manga)은 일본만화로
       type: s.operator_property?.is_manga ? 'manga' : s.category === '웹툰' ? 'webtoon' : 'webnovel',
       note: s.category || '',
+      genre: s.sub_category || '',
     })),
     hasMore: (data) => data.result ? !data.result.is_end : false,
   },
@@ -950,38 +956,6 @@ function renderSearchResults() {
     : `<p class="msg">검색 결과 ${groups.length}개를 모두 봤어요.</p>`);
 }
 
-// "내 서재에 담기": 입력칸을 검색 결과로 채우고, 그 작품이 있는 플랫폼 링크를 모두 넣음
-function pickResult(group) {
-  const main = mainItem(group);
-  const cover = coverItem(group);
-  const sorted = [...group.items].sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
-
-  $('f-title').value = main.title;
-  $('f-author').value = main.author || '';
-  $('f-type').value = main.type;
-  $('f-platform').value = [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', ');
-  $('coverUrl').value = cover?.cover || '';
-  setFormCover(cover?.cover || '');
-  formCoverSource = cover?.cover ? { url: cover.cover, name: SEARCH_SOURCES[cover.source].platform } : null;
-  formLinks = sorted
-    .map((i) => ({ name: SEARCH_SOURCES[i.source].platform, url: safeUrl(i.url || linkOf(i.source, i.sourceId)) }))
-    .filter((l) => l.url);
-  renderLinkList();
-  const link = { source: main.source, sourceId: main.sourceId, unit: main.unit || '' };
-  formLink = link;
-  updateProgressUnit();
-
-  // 표지가 카카오웹툰 것이면 더 좋은 대표 이미지로 바꿈
-  const src = cover && SEARCH_SOURCES[cover.source];
-  if (src?.fetchCover) {
-    src.fetchCover(cover.sourceId).then((url) => {
-      if (formLink !== link || !url) return; // 그사이 다른 작품을 골랐으면 무시
-      $('coverUrl').value = url;
-      setFormCover(url);
-      formCoverSource = { url, name: src.platform };
-    }).catch(() => {});
-  }
-}
 
 // "어디까지 봤나요?" 칸 옆의 단위(화/권) 표시
 function updateProgressUnit() {
@@ -1103,8 +1077,9 @@ function runSearch(q) {
 }
 
 
-// ----- 6-5. 작품 정보 화면 (웹소소처럼 정보 먼저, 수정은 버튼으로) -----
-// detailState: { workId } 내 서재 작품 / { group } 아직 서재에 없는 검색 결과
+// ----- 6-5. 작품 정보 화면 (웹소소처럼: 작품 정보 + 내 기록을 이 화면에서 바로) -----
+// detailState: { workId } 내 서재 작품 / { group, info } 아직 서재에 없는 검색 결과
+//   (info: 정보 화면을 열 때 더 불러온 { cover, desc } - 카카오웹툰만)
 let detailState = null;
 
 // 검색 결과가 이미 내 서재에 있는지 (제목·종류가 같으면 같은 작품)
@@ -1113,21 +1088,28 @@ function findInLibrary(group) {
   return works.find((w) => titleKey(w.title) === titleKey(main.title) && w.type === main.type);
 }
 
-// 검색 결과 묶음을 작품 모양으로 (정보 화면에 보여주기용)
-function groupAsWork(group) {
+// 검색 결과 묶음을 작품 모양으로 (플랫폼 순서상 앞에 있는 것부터 씀)
+function groupAsWork(group, info = {}) {
   const main = mainItem(group);
   const cover = coverItem(group);
   const sorted = [...group.items].sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
+  // 작품 소개는 가장 긴 것 (카카오웹툰은 검색 결과에 짧은 소개만 있어서)
+  const descs = [info.desc, ...sorted.map((i) => i.desc)].filter(Boolean);
   return {
     title: main.title,
     author: main.author || '',
     type: main.type,
-    cover: cover?.cover || '',
-    coverSource: cover ? SEARCH_SOURCES[cover.source].platform : '',
+    cover: info.cover || cover?.cover || '',
+    coverSource: info.cover ? '카카오웹툰' : cover ? SEARCH_SOURCES[cover.source].platform : '',
     platform: [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', '),
+    genre: sorted.find((i) => i.genre)?.genre || '',
+    desc: descs.sort((a, b) => b.length - a.length)[0] || '',
     links: sorted
       .map((i) => ({ name: SEARCH_SOURCES[i.source].platform, url: safeUrl(i.url || linkOf(i.source, i.sourceId)) }))
       .filter((l) => l.url),
+    source: main.source,
+    sourceId: main.sourceId,
+    unit: main.unit || '',
   };
 }
 
@@ -1137,13 +1119,13 @@ function openDetail(state) {
   openOverlay('detailPage');
   $('detailPage').scrollTop = 0;
 
-  // 카카오웹툰 표지만 있는 검색 결과는 대표 이미지를 불러와서 바꿈
-  const cover = state.group && coverItem(state.group);
-  const src = cover && SEARCH_SOURCES[cover.source];
-  if (src?.fetchCover) {
-    src.fetchCover(cover.sourceId).then((url) => {
-      if (!url || detailState !== state) return;
-      document.querySelectorAll('#detailBody .hero img').forEach((img) => { img.src = url; });
+  // 카카오웹툰 작품은 대표 이미지와 전체 작품 소개를 불러옴 (이 화면을 열 때 한 번만)
+  const kw = state.group?.items.find((i) => i.source === 'kakaoWebtoon');
+  if (kw) {
+    SEARCH_SOURCES.kakaoWebtoon.fetchInfo(kw.sourceId).then((info) => {
+      if (detailState !== state) return; // 그사이 화면을 닫았으면 무시
+      state.info = info;
+      renderDetail();
     }).catch(() => {});
   }
 }
@@ -1151,14 +1133,14 @@ function openDetail(state) {
 function renderDetail() {
   if (!detailState) return;
   const mine = detailState.workId ? works.find((w) => w.id === detailState.workId) : null;
-  const w = mine || groupAsWork(detailState.group);
-  $('detailEdit').hidden = !mine;
+  if (detailState.workId && !mine) return;
+  const w = mine || groupAsWork(detailState.group, detailState.info);
   $('detailBody').innerHTML = detailHTML(w, mine);
 }
 
 function detailHTML(w, mine) {
   const links = workLinks(w);
-  // 표지 출처: 검색으로 가져온 표지만 표시 (직접 고른 사진은 표시 안 함)
+  // 표지 출처: 플랫폼에서 가져온 표지만 표시 (직접 고른 사진은 표시 안 함)
   const source = w.coverSource || (w.cover && !w.cover.startsWith('data:') && SEARCH_SOURCES[w.source]?.platform) || '';
   return `
     <div class="hero">
@@ -1168,12 +1150,12 @@ function detailHTML(w, mine) {
     </div>
 
     <div class="detail-info">
-      <p class="kicker">${esc([TYPES[w.type], w.platform].filter(Boolean).join(' · '))}</p>
+      <p class="kicker">${esc([TYPES[w.type], w.genre, w.platform].filter(Boolean).join(' · '))}</p>
       <h2 class="detail-title">${esc(w.title)}</h2>
       ${w.author ? `<p class="detail-author">${esc(w.author)}</p>` : ''}
-      ${mine && mine.rating ? `
-        <div class="detail-rating"><span class="stars">${starsHTML(mine.rating)}</span><b>${mine.rating.toFixed(1)}</b></div>` : ''}
     </div>
+
+    ${mine ? myRecordHTML(mine) : ''}
 
     ${links.length ? `
       <div class="detail-sec">
@@ -1186,37 +1168,193 @@ function detailHTML(w, mine) {
         </div>
       </div>` : ''}
 
-    ${mine ? myRecordHTML(mine) : `
+    ${w.desc ? `
       <div class="detail-sec">
-        <button type="button" class="primary wide" id="detailAdd">내 서재에 담기</button>
-      </div>`}
+        <h3>작품 소개</h3>
+        <p class="detail-desc">${esc(w.desc)}</p>
+      </div>` : ''}
 
-    <p class="detail-note">작품 정보와 표지는 각 플랫폼에서 가져왔어요. 작품은 해당 플랫폼에서 볼 수 있어요.</p>`;
+    ${mine ? `
+      <div class="detail-tools">
+        <button type="button" class="link" data-edit>정보 직접 수정</button>
+        <button type="button" class="link danger-link" data-remove>서재에서 빼기</button>
+      </div>` : ''}
+
+    <p class="detail-note">작품 정보와 표지는 각 플랫폼에서 가져왔어요. 작품은 해당 플랫폼에서 볼 수 있어요.</p>
+
+    ${mine ? '' : `
+      <div class="detail-cta">
+        <button type="button" class="primary wide" id="detailAdd">내 서재에 담기</button>
+      </div>`}`;
 }
 
-// 작품 정보 화면의 "내 기록"
+// 내 기록: 상태 / 별점 / 본 회차 / 한줄평 (누르면 바로 저장)
 function myRecordHTML(w) {
-  const dates = [
-    ['보기 시작한 날', w.startedAt],
-    ['다 본 날', w.finishedAt],
-    ['서재에 담은 날', dateKey(w.createdAt)],
-  ].filter(([, d]) => d);
+  const unit = unitOf(w.type, w.unit);
   return `
-    <div class="detail-sec">
-      <div class="sec-row">
-        <h3>내 기록</h3>
-        <span class="status status-${w.status}">${STATUSES[w.status]}</span>
+    <div class="record">
+      <!-- 누르면 상태 선택 창 / 별점 창이 아래에서 올라옴 -->
+      <div class="record-top">
+        <button type="button" class="record-btn status-btn st-${w.status}" data-open-status>
+          <span class="record-ico">${STATUS_INFO[w.status].icon}</span>
+          <span class="record-txt"><small>내 상태</small><b>${STATUSES[w.status]}</b></span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <button type="button" class="record-btn rate-btn${w.rating ? ' rated' : ''}" data-open-rating>
+          <span class="record-ico rate-ico">★</span>
+          <span class="record-txt"><small>내 별점</small><b>${w.rating ? w.rating.toFixed(1) : '남기기'}</b></span>
+        </button>
       </div>
-      ${progressHTML(w)}
+
+      <div class="record-row">
+        <span class="record-label">본 회차</span>
+        <div class="stepper">
+          <button type="button" data-step="-1" aria-label="한 ${unit} 빼기">−</button>
+          <input type="number" id="detailProgress" min="0" max="99999" inputmode="numeric" value="${w.progress || 0}" aria-label="본 회차">
+          <button type="button" data-step="1" aria-label="한 ${unit} 더하기">+</button>
+        </div>
+        <span class="record-unit">${unit}</span>
+      </div>
+
       ${w.review
-        ? `<p class="detail-review">${esc(w.review)}</p>`
-        : '<p class="detail-empty">아직 한줄평이 없어요.</p>'}
-      ${dates.length ? `
-        <dl class="detail-dates">
-          ${dates.map(([label, d]) => `<div><dt>${label}</dt><dd>${d.replaceAll('-', '. ')}</dd></div>`).join('')}
-        </dl>` : ''}
-      <button type="button" class="ghost wide" data-edit>기록 수정</button>
+        ? `<button type="button" class="review-card" data-review>
+             <span class="review-text">${esc(w.review)}</span>
+             <span class="review-edit">수정</span>
+           </button>`
+        : `<button type="button" class="review-btn" data-review>
+             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>
+             한줄평 쓰기
+           </button>`}
     </div>`;
+}
+
+// 내 서재 작품 고쳐서 저장 (작품 정보 화면에서 바로)
+async function updateWork(id, patch) {
+  const old = works.find((w) => w.id === id);
+  if (!old) return;
+  const work = { ...old, ...patch, updatedAt: Date.now() };
+  // '완독'으로 바꾸고 다 본 날이 비어 있으면 오늘 날짜를 넣어줌
+  if (work.status === 'done' && !work.finishedAt) work.finishedAt = new Date().toLocaleDateString('sv-SE');
+  await saveOne(work);
+  works = works.map((w) => (w.id === id ? work : w));
+  render();
+}
+
+// "내 서재에 담기": 검색해서 가져온 정보 그대로 바로 저장 (보는 중, 오늘 시작)
+async function addFromGroup(group, info) {
+  const w = groupAsWork(group, info);
+  const now = Date.now();
+  const work = {
+    ...w,
+    id: newId(),
+    status: 'reading',
+    review: '',
+    progress: 0,
+    latest: 0,
+    rating: 0,
+    startedAt: new Date().toLocaleDateString('sv-SE'),
+    finishedAt: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+  await saveOne(work);
+  works = [...works, work];
+  detailState = { workId: work.id };
+  render();
+  toast('서재에 담았어요');
+}
+
+async function removeWork(id) {
+  const work = works.find((w) => w.id === id);
+  if (!work || !confirm(`'${work.title}'을(를) 서재에서 뺄까요?`)) return;
+  await deleteOne(id);
+  works = works.filter((w) => w.id !== id);
+  closeOverlay();
+  render();
+}
+
+// 상태 선택 창 (웹소소처럼 아래에서 올라오는 목록)
+const ICON = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const STATUS_INFO = {
+  reading: { desc: '지금 보고 있어요', icon: ICON('<path d="M3 5.5C5 4.5 8 4.5 12 6.5c4-2 7-2 9-1V19c-2-1-5-1-9 1-4-2-7-2-9-1z"/><path d="M12 6.5V20"/>') },
+  done: { desc: '끝까지 다 봤어요', icon: ICON('<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.5 2.5L16 9.5"/>') },
+  paused: { desc: '잠시 쉬는 중이에요', icon: ICON('<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>') },
+  dropped: { desc: '그만 보기로 했어요', icon: ICON('<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/>') },
+};
+
+function openStatusSheet() {
+  const w = works.find((x) => x.id === detailState?.workId);
+  if (!w) return;
+  $('statusList').innerHTML = Object.entries(STATUSES).map(([key, label]) => `
+    <button type="button" class="status-option st-${key}${w.status === key ? ' active' : ''}" data-status="${key}">
+      <span class="record-ico">${STATUS_INFO[key].icon}</span>
+      <span class="record-txt"><b>${label}</b><small>${STATUS_INFO[key].desc}</small></span>
+      ${w.status === key ? '<svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>' : ''}
+    </button>`).join('');
+  $('statusSheet').showModal();
+}
+
+// 상태를 고르면 저장하고, 처음으로 완독하면 바로 별점 창을 띄움
+async function pickStatus(status) {
+  const w = works.find((x) => x.id === detailState?.workId);
+  $('statusSheet').close();
+  if (!w || w.status === status) return;
+  await updateWork(w.id, { status });
+  if (status === 'done' && !w.rating) openRating(true);
+}
+
+// 별점 창: 큰 별 5개 (누르거나 밀어서 0.5점 단위로)
+const RATING_WORDS = { 0.5: '최악이에요', 1: '싫어요', 1.5: '재미없어요', 2: '별로예요', 2.5: '부족해요', 3: '보통이에요', 3.5: '볼만해요', 4: '재밌어요', 4.5: '훌륭해요', 5: '최고예요!' };
+let sheetRating = 0;
+
+function openRating(justFinished = false) {
+  const w = works.find((x) => x.id === detailState?.workId);
+  if (!w) return;
+  $('ratingTitle').textContent = justFinished ? '다 보셨군요! 어떠셨나요?' : '이 작품, 어떠셨나요?';
+  $('ratingWork').textContent = w.title;
+  $('ratingSheetClear').hidden = !w.rating;
+  setSheetRating(w.rating || 0);
+  $('ratingSheet').showModal();
+}
+
+function setSheetRating(value) {
+  sheetRating = value;
+  $('ratingSheetStars').innerHTML = starsHTML(value);
+  $('ratingWord').innerHTML = value
+    ? `<b>${value.toFixed(1)}</b> ${RATING_WORDS[value]}`
+    : '별을 눌러서 점수를 매겨 주세요';
+}
+
+// 별 위의 손가락 위치 → 0.5 ~ 5점
+function ratingAt(clientX) {
+  const rect = $('ratingSheetStars').getBoundingClientRect();
+  const ratio = (clientX - rect.left) / rect.width;
+  return Math.min(5, Math.max(0.5, Math.ceil(ratio * 10) / 2));
+}
+
+// 한줄평 쓰기 창
+function openReview() {
+  const w = works.find((x) => x.id === detailState?.workId);
+  if (!w) return;
+  $('reviewWork').textContent = w.title;
+  $('reviewInput').value = w.review || '';
+  $('reviewDelete').hidden = !w.review;
+  updateReviewCount();
+  $('reviewDialog').showModal();
+  $('reviewInput').focus();
+}
+
+function updateReviewCount() {
+  $('reviewCount').textContent = `${$('reviewInput').value.length}/100`;
+}
+
+// 화면 아래에 잠깐 뜨는 알림
+let toastTimer;
+function toast(text) {
+  $('toast').textContent = text;
+  $('toast').hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $('toast').hidden = true; }, 1800);
 }
 
 
@@ -1339,14 +1477,78 @@ function bindEvents() {
     openDetail(mine ? { workId: mine.id } : { group });
   });
 
-  // 작품 정보 화면
+  // 작품 정보 화면: 내 기록은 누르는 즉시 저장
   $('detailBack').addEventListener('click', closeOverlay);
-  $('detailEdit').addEventListener('click', () => openEditor(works.find((w) => w.id === detailState?.workId)));
   $('detailBody').addEventListener('click', (e) => {
-    const plus = e.target.closest('.plus-btn');
-    if (plus) { addProgress(plus.dataset.id); return; }
-    if (e.target.closest('[data-edit]')) openEditor(works.find((w) => w.id === detailState?.workId));
-    if (e.target.closest('#detailAdd')) { openEditor(null); pickResult(detailState.group); }
+    const id = detailState?.workId;
+    if (e.target.closest('#detailAdd')) { addFromGroup(detailState.group, detailState.info); return; }
+    if (!id) return;
+    const work = works.find((w) => w.id === id);
+
+    if (e.target.closest('[data-open-status]')) { openStatusSheet(); return; }
+    if (e.target.closest('[data-open-rating]')) { openRating(); return; }
+
+    const step = e.target.closest('[data-step]');
+    if (step) { updateWork(id, { progress: Math.max(0, (work.progress || 0) + Number(step.dataset.step)) }); return; }
+
+    if (e.target.closest('[data-review]')) openReview();
+    if (e.target.closest('[data-edit]')) openEditor(work);
+    if (e.target.closest('[data-remove]')) removeWork(id);
+  });
+  // 본 회차 직접 입력: 다 쓰고 나면(엔터나 다른 곳 누르기) 저장
+  $('detailBody').addEventListener('change', (e) => {
+    if (e.target.id !== 'detailProgress' || !detailState?.workId) return;
+    updateWork(detailState.workId, { progress: Math.max(0, Math.floor(Number(e.target.value) || 0)) });
+  });
+  $('detailBody').addEventListener('keydown', (e) => {
+    if (e.target.id === 'detailProgress' && e.key === 'Enter') e.target.blur();
+  });
+
+  // 상태 선택 창
+  $('statusList').addEventListener('click', (e) => {
+    const option = e.target.closest('[data-status]');
+    if (option) pickStatus(option.dataset.status);
+  });
+
+  // 별점 창: 누르거나 별 위를 밀면 점수가 바뀜
+  let draggingStars = false;
+  $('ratingSheetStars').addEventListener('pointerdown', (e) => {
+    draggingStars = true;
+    $('ratingSheetStars').setPointerCapture(e.pointerId);
+    setSheetRating(ratingAt(e.clientX));
+  });
+  $('ratingSheetStars').addEventListener('pointermove', (e) => {
+    if (draggingStars) setSheetRating(ratingAt(e.clientX));
+  });
+  $('ratingSheetStars').addEventListener('pointerup', () => { draggingStars = false; });
+  $('ratingSheetStars').addEventListener('pointercancel', () => { draggingStars = false; });
+  $('ratingSheetCancel').addEventListener('click', () => $('ratingSheet').close());
+  $('ratingSheetClear').addEventListener('click', async () => {
+    await updateWork(detailState.workId, { rating: 0 });
+    $('ratingSheet').close();
+  });
+  $('ratingSheetForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await updateWork(detailState.workId, { rating: sheetRating });
+    $('ratingSheet').close();
+  });
+
+  // 시트 바깥(어두운 부분)을 누르면 닫기
+  ['statusSheet', 'ratingSheet', 'reviewDialog'].forEach((id) => {
+    $(id).addEventListener('click', (e) => { if (e.target === $(id)) $(id).close(); });
+  });
+
+  // 한줄평 쓰기 창
+  $('reviewInput').addEventListener('input', updateReviewCount);
+  $('reviewCancel').addEventListener('click', () => $('reviewDialog').close());
+  $('reviewDelete').addEventListener('click', async () => {
+    await updateWork(detailState.workId, { review: '' });
+    $('reviewDialog').close();
+  });
+  $('reviewForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await updateWork(detailState.workId, { review: $('reviewInput').value.trim().slice(0, 100) });
+    $('reviewDialog').close();
   });
 
   // 홈 "전체 보기" / "서재로": 서재 화면으로 이동 (보는 중이면 상태 필터도 같이)
