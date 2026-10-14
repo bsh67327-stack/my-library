@@ -10,14 +10,15 @@ const fixType = (w) => (w && w.type === 'manga' ? { ...w, type: 'comic' } : w);
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
 
 // 화면 상태: 홈/서재/피드/캘린더 중 어떤 화면인지, 어떤 필터/정렬을 보고 있는지
-// layout: 서재를 카드형(card) / 쌓아보기(stack) / 리스트(list) 중 무엇으로 볼지 (마지막에 고른 것을 기억)
-const LAYOUTS = ['card', 'stack', 'list'];
+// layout: 서재를 카드형(card) / 리스트(list) 중 무엇으로 볼지 (마지막에 고른 것을 기억)
+// (책을 쌓은 모양은 홈 "최근 기록"으로 옮김)
+const LAYOUTS = ['card', 'list'];
 const view = { mode: 'home', layout: savedLayout(), type: 'all', status: 'all', sort: 'updated', query: '' };
 
 function savedLayout() {
@@ -167,14 +168,10 @@ function render() {
   };
   list.sort(sorters[view.sort]);
 
-  // (3) 카드형 / 쌓아보기 / 리스트로 그리기
+  // (3) 카드형 / 리스트로 그리기
   $('libCount').textContent = list.length || '';
   $('grid').className = `layout-${view.layout}`;
-  if (view.layout === 'stack') {
-    $('grid').innerHTML = list.length ? `<div class="stack">${list.map(spineHTML).join('')}</div>` : '';
-  } else {
-    $('grid').innerHTML = list.map(view.layout === 'card' ? cardHTML : rowHTML).join('');
-  }
+  $('grid').innerHTML = list.map(view.layout === 'card' ? cardHTML : rowHTML).join('');
   document.querySelectorAll('#layoutToggle button')
     .forEach((b) => b.classList.toggle('active', b.dataset.layout === view.layout));
 
@@ -264,7 +261,7 @@ function rowHTML(w) {
     </article>`;
 }
 
-// 쌓아보기: 작품을 책등처럼 쌓음
+// 홈 "최근 기록": 작품을 책등처럼 쌓음
 // 많이 본 작품일수록 두껍게, 폭·위치·기울기는 작품마다 조금씩 다르게 (작품 id로 정해서 매번 같음)
 const SPINE_COLORS = ['#e07a5f', '#3d405b', '#81b29a', '#b56576', '#355070', '#6d597a', '#457b9d', '#2a9d8f', '#bc6c25', '#588157'];
 
@@ -361,8 +358,9 @@ function renderHome() {
   $('recName').textContent = displayName();
   $('recSection').hidden = recs.length === 0;
   $('recRow').innerHTML = recs.map(recHTML).join('');
+  // 최근 기록: 최근에 기록한 작품 8개를 책등처럼 쌓아서 (맨 위가 가장 최근)
   $('recentList').innerHTML = works.length
-    ? byUpdated.slice(0, 5).map(rowHTML).join('')
+    ? `<div class="stack">${byUpdated.slice(0, 8).map(spineHTML).join('')}</div>`
     : '<p class="hint">아직 기록한 작품이 없어요.<br>위 검색창에서 첫 작품을 추가해 보세요!</p>';
 }
 
@@ -689,9 +687,10 @@ function parseSeries(html, kind) {
   return [...doc.querySelectorAll('.lst_list li')].map((li) => {
     const link = li.querySelector('h3 a[href*="productNo="]');
     if (!link) return null;
-    // 제목 예: "화산귀환[독점] (총 189화/미완결)" - 회차 수는 버리고 단위(화/권)만 씀
+    // 제목 예: "화산귀환[독점] (총 189화/미완결)", 장르 목록에서는 "화산귀환[독점](189화/미완결)"
+    // - 회차 수는 버리고 단위(화/권)만 씀
     const text = link.textContent.replace(/\s+/g, ' ').trim();
-    const count = text.match(/\(총\s*[\d,]+\s*(화|권)/);
+    const count = text.match(/\((?:총\s*)?[\d,]+\s*(화|권)/);
     const unit = count ? count[1] : '';
     const img = li.querySelector('img');
     // 같은 이름이 두 번 나오는 경우가 많아서(글/그림 작가) 중복 제거
@@ -704,7 +703,7 @@ function parseSeries(html, kind) {
 
     return {
       sourceId: link.getAttribute('href').match(/productNo=(\d+)/)[1],
-      title: text.replace(/\s*\(총[^)]*\)\s*$/, '').replace(/\s*\[독점\]/, '').trim(),
+      title: text.replace(/\s*\((?:총\s*)?[\d,]+\s*(?:화|권)[^)]*\)\s*$/, '').replace(/\s*\[독점\]/, '').trim(),
       author: authors.join(', '),
       cover: img ? img.getAttribute('src').replace(/\?type=.*$/, '?type=m260') : '',
       type,
@@ -962,7 +961,8 @@ function coverItem(group) {
 }
 
 // 새로 검색 (more = true면 다음 페이지가 있는 플랫폼만 이어서 불러옴)
-async function searchPlatform(more = false) {
+// fromFinder = true면 검색어 대신 작품 찾기에서 고른 장르로 (searchState.finder 를 미리 넣어 둠)
+async function searchPlatform(more = false, fromFinder = false) {
   const box = $('s-results');
   if (!SEARCH_SERVER) {
     box.innerHTML = '<p class="msg">검색 서버가 아직 연결되지 않았어요. (app.js의 SEARCH_SERVER)</p>';
@@ -971,25 +971,34 @@ async function searchPlatform(more = false) {
   if (searchState.loading) return;
 
   let targets;
-  if (!more) {
-    const q = $('s-query').value.trim();
-    if (!q) return;
-    searchState = { q, groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all' } };
-    targets = ALL_SOURCES.map((source) => ({ source, page: 0 }));
-    box.innerHTML = '<p class="msg">모든 플랫폼에서 찾는 중…</p>';
-  } else {
+  if (more) {
     targets = Object.entries(searchState.pages)
       .filter(([, p]) => p.hasMore)
       .map(([source, p]) => ({ source, page: p.page + 1 }));
     const btn = $('s-more');
     if (btn) { btn.disabled = true; btn.textContent = '불러오는 중…'; }
+  } else if (fromFinder) {
+    targets = searchState.finder.sources.map((source) => ({ source, page: 0 }));
+    box.innerHTML = `<p class="msg">${esc(searchState.finder.genre.name)} 작품을 찾는 중…</p>`;
+  } else {
+    const q = $('s-query').value.trim();
+    if (!q) return;
+    searchState = { q, groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all' } };
+    targets = ALL_SOURCES.map((source) => ({ source, page: 0 }));
+    box.innerHTML = '<p class="msg">모든 플랫폼에서 찾는 중…</p>';
   }
 
   searchState.loading = true;
   searchState.failed = [];
-  const { q } = searchState;
+  const { q, finder } = searchState;
   // 모든 플랫폼에 동시에 요청하고, 실패한 곳이 있어도 나머지 결과는 보여줌
-  const results = await Promise.allSettled(targets.map((t) => fetchSearch(t.source, q, t.page)));
+  // (작품 찾기는 플랫폼의 장르 목록 순서(인기순)를 rank 로 기억해 둠)
+  const run = async (t) => {
+    const res = finder ? await FINDER_FETCH[t.source](finder.genre, t.page) : await fetchSearch(t.source, q, t.page);
+    res.items.forEach((item, i) => { item.rank = t.page * 100 + i; });
+    return res;
+  };
+  const results = await Promise.allSettled(targets.map(run));
   results.forEach((res, i) => {
     const { source, page } = targets[i];
     if (res.status === 'fulfilled') {
@@ -1007,19 +1016,30 @@ async function searchPlatform(more = false) {
 
 function renderSearchResults() {
   const box = $('s-results');
+  const { finder } = searchState;
   const qKey = titleKey(searchState.q);
+  const bestRank = (g) => Math.min(...g.items.map((i) => i.rank ?? 9999));
   // 순서: 제목이 검색어와 똑같은 작품 → 여러 플랫폼에 있는 작품 → 대표 플랫폼 순서 → 처음 나온 순서
-  const all = [...searchState.groups.values()].sort((a, b) =>
-    (titleKey(mainItem(b).title) === qKey) - (titleKey(mainItem(a).title) === qKey) ||
-    b.items.length - a.items.length ||
-    sourceRank(mainItem(a).source) - sourceRank(mainItem(b).source) ||
-    a.order - b.order
+  // (작품 찾기는 플랫폼 인기순을 섞어서: 각 플랫폼 1위끼리 → 2위끼리 …)
+  let all = [...searchState.groups.values()].sort(finder
+    ? (a, b) => bestRank(a) - bestRank(b) || sourceRank(mainItem(a).source) - sourceRank(mainItem(b).source)
+    : (a, b) =>
+      (titleKey(mainItem(b).title) === qKey) - (titleKey(mainItem(a).title) === qKey) ||
+      b.items.length - a.items.length ||
+      sourceRank(mainItem(a).source) - sourceRank(mainItem(b).source) ||
+      a.order - b.order
   );
+  // 작품 찾기에서 고른 종류 / 연재 상태로 거름
+  if (finder) {
+    all = all.filter((g) =>
+      (!finder.types.size || finder.types.has(mainItem(g).type)) &&
+      (!finder.ongoing || mergeOngoing(g.items.map((i) => i.ongoing)) === finder.ongoing));
+  }
   const failed = searchState.failed.length
-    ? `<p class="msg"><small>검색하지 못한 곳: ${esc(searchState.failed.join(', '))}</small></p>`
+    ? `<p class="msg"><small>${finder ? '불러오지 못한 곳' : '검색하지 못한 곳'}: ${esc(searchState.failed.join(', '))}</small></p>`
     : '';
   if (!all.length) {
-    box.innerHTML = (searchState.failed.length === ALL_SOURCES.length
+    box.innerHTML = (searchState.failed.length === (finder ? finder.sources.length : ALL_SOURCES.length)
       ? '<p class="msg">검색에 실패했어요. 잠시 후 다시 해보세요.</p>'
       : '<p class="msg">검색 결과가 없어요.</p>') + failed;
     return;
@@ -1043,7 +1063,8 @@ function renderSearchResults() {
     (f.platform === 'all' || g.items.some((i) => platformOf(i) === f.platform)));
 
   const hasMore = Object.values(searchState.pages).some((p) => p.hasMore);
-  box.innerHTML = filters + `<p class="s-count">검색 결과 ${groups.length}${hasMore ? '+' : ''}</p>`
+  const countLabel = finder ? `${finder.genre.name} · 인기순` : '검색 결과';
+  box.innerHTML = filters + `<p class="s-count">${esc(countLabel)} ${groups.length}${hasMore ? '+' : ''}</p>`
     + (groups.length ? '' : '<p class="msg">조건에 맞는 작품이 없어요.</p>') + groups.map((g) => {
     const main = mainItem(g);
     const cover = coverItem(g);
@@ -1061,6 +1082,109 @@ function renderSearchResults() {
   }).join('') + failed + (hasMore
     ? `<button type="button" id="s-more" class="ghost s-more">더 보기</button>`
     : `<p class="msg">검색 결과를 모두 봤어요.</p>`);
+}
+
+
+// ----- 6-2-1. 작품 찾기 (홈 배너 "뭐 볼지 고민될 때") -----
+// 장르를 고르면 플랫폼의 장르별 목록(인기순)을 받아서 검색 결과 화면에 보여줌
+// 장르 목록을 받을 수 있는 곳: 네이버웹툰 · 카카오웹툰 · 네이버 시리즈
+// (카카오페이지·미스터블루는 장르 목록을 받는 방법을 아직 못 찾아서 빠져 있음)
+// naver: 네이버웹툰 장르 코드 / kw: 카카오웹툰 장르 이름 / novel·comic: 네이버 시리즈 웹소설·만화 장르 코드
+const FINDER_GENRES = [
+  { name: '로맨스', naver: ['PURE'], kw: '로맨스', novel: '201', comic: '99' },
+  { name: '로판', kw: '로맨스 판타지', novel: '207' },
+  { name: '판타지', naver: ['FANTASY'], kw: '판타지 드라마', novel: '202' },
+  { name: '현판', novel: '208' },
+  { name: '무협', naver: ['HISTORICAL'], kw: '액션/무협', novel: '206', comic: '88' },
+  { name: '액션', naver: ['ACTION'], kw: '액션/무협', comic: '90' },
+  { name: '드라마', naver: ['DRAMA'], kw: '드라마', comic: '93' },
+  { name: '스릴러', naver: ['THRILL'], kw: '공포/스릴러', novel: '203' },
+  { name: '일상·개그', naver: ['DAILY', 'COMIC'], kw: '코믹/일상' },
+  { name: '감성', naver: ['SENSIBILITY'] },
+  { name: '학원', kw: '학원/판타지' },
+  { name: '스포츠', naver: ['SPORTS'] },
+  { name: '라노벨', novel: '205' },
+  { name: 'BL', novel: '209', comic: '107' },
+];
+const FINDER_PLATFORMS = ['네이버웹툰', '카카오웹툰', '네이버 시리즈'];
+
+// 플랫폼별 장르 목록 받기 → { items, hasMore } (검색 결과와 같은 모양)
+const FINDER_FETCH = {
+  naverWebtoon: async (g, page) => {
+    const lists = await Promise.all(g.naver.map((code) => callServer('naverGenre', code, page)));
+    const items = lists.flatMap((d) => (d.titleList || []).map((w) => ({
+      sourceId: w.titleId,
+      title: w.titleName,
+      author: uniqueAuthors(w.author),
+      cover: w.thumbnailUrl,
+      type: 'webtoon',
+      note: '',
+      ongoing: w.finish ? '완결' : '연재중',
+    })));
+    return { items, hasMore: lists.some((d) => (d.pageInfo?.page || 0) < (d.pageInfo?.totalPages || 0)) };
+  },
+  // 카카오웹툰은 장르 이름으로 검색하면 장르 작품이 나옴 (제목에 그 낱말만 들어간 작품은 뺌)
+  kakaoWebtoon: async (g, page) => {
+    const res = await fetchSearch('kakaoWebtoon', g.kw, page);
+    return { items: res.items.filter((i) => i.genre === g.kw), hasMore: res.hasMore };
+  },
+  seriesNovel: (g, page) => seriesGenreList('novel', g.novel, page),
+  seriesComic: (g, page) => seriesGenreList('comic', g.comic, page),
+};
+
+async function seriesGenreList(kind, code, page) {
+  const items = parseSeries(await callServer('seriesGenre', `${kind}/${code}`, page, true), kind);
+  items.forEach((i) => { i.author = uniqueAuthors(i.author); });
+  return { items, hasMore: items.length >= 25 }; // 한 페이지에 25개씩
+}
+
+// 작품 찾기 화면에서 고른 것 (types·platforms 가 비어 있으면 전체)
+let finderPick = { genre: '', types: new Set(), platforms: new Set(), ongoing: '' };
+
+function openFinder() {
+  renderFinder();
+  openOverlay('finderPage');
+  $('finderPage').scrollTop = 0;
+}
+
+function renderFinder() {
+  const pick = (kind, value, label, on) =>
+    `<button type="button" class="f-pick${on ? ' active' : ''}" data-pick="${kind}" data-value="${esc(value)}">${esc(label)}</button>`;
+  $('finderGenres').innerHTML = FINDER_GENRES.map((g) => pick('genre', g.name, g.name, finderPick.genre === g.name)).join('');
+  $('finderTypes').innerHTML = Object.entries(TYPES).map(([t, label]) => pick('types', t, label, finderPick.types.has(t))).join('');
+  $('finderPlatforms').innerHTML = FINDER_PLATFORMS.map((p) => pick('platforms', p, p, finderPick.platforms.has(p))).join('');
+  $('finderOngoing').innerHTML = ['연재중', '완결'].map((o) => pick('ongoing', o, o, finderPick.ongoing === o)).join('');
+}
+
+// 고른 장르·종류·플랫폼·연재 상태로 받아 올 곳
+// (카카오웹툰은 목록에 연재 상태가 없어서 연재 상태를 고르면 뺌)
+function finderSources(g) {
+  const ok = (platform, types) =>
+    (!finderPick.platforms.size || finderPick.platforms.has(platform)) &&
+    (!finderPick.types.size || types.some((t) => finderPick.types.has(t)));
+  return [
+    g.naver && ok('네이버웹툰', ['webtoon']) && 'naverWebtoon',
+    g.kw && !finderPick.ongoing && ok('카카오웹툰', ['webtoon']) && 'kakaoWebtoon',
+    g.novel && ok('네이버 시리즈', ['webnovel']) && 'seriesNovel',
+    g.comic && ok('네이버 시리즈', ['webtoon', 'comic']) && 'seriesComic',
+  ].filter(Boolean);
+}
+
+function runFinder() {
+  const g = FINDER_GENRES.find((x) => x.name === finderPick.genre);
+  if (!g) { toast('장르를 골라 주세요'); return; }
+  const sources = finderSources(g);
+  if (!sources.length) { toast('이 조건으로 찾을 수 있는 곳이 없어요'); return; }
+  searchState = {
+    q: '', groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all' },
+    finder: { genre: g, sources, types: new Set(finderPick.types), ongoing: finderPick.ongoing },
+  };
+  openOverlay('searchPage');
+  $('s-query').value = '';
+  $('searchIntro').hidden = true;
+  $('s-results').hidden = false;
+  $('searchPage').scrollTop = 0;
+  searchPlatform(false, true);
 }
 
 
@@ -1853,6 +1977,27 @@ function bindEvents() {
 
   // 홈 검색창 / ＋ 버튼: 검색 화면 열기
   $('homeSearch').addEventListener('click', () => openSearch());
+
+  // 작품 찾기: 장르는 하나만, 종류·플랫폼은 여러 개, 연재 상태는 하나 (다시 누르면 해제)
+  $('finderBanner').addEventListener('click', openFinder);
+  $('finderBack').addEventListener('click', closeOverlay);
+  $('finderPage').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-pick]');
+    if (!btn) return;
+    const { pick, value } = btn.dataset;
+    if (pick === 'genre' || pick === 'ongoing') {
+      finderPick[pick] = finderPick[pick] === value ? '' : value;
+    } else {
+      const set = finderPick[pick];
+      if (set.has(value)) set.delete(value); else set.add(value);
+    }
+    renderFinder();
+  });
+  $('finderReset').addEventListener('click', () => {
+    finderPick = { genre: '', types: new Set(), platforms: new Set(), ongoing: '' };
+    renderFinder();
+  });
+  $('finderRun').addEventListener('click', runFinder);
   // ＋ 버튼: 피드에서는 한줄평 쓰기, 나머지 화면에서는 작품 검색
   $('addBtn').addEventListener('click', () => (view.mode === 'feed' ? openReviewPage() : openSearch()));
 
@@ -1975,7 +2120,7 @@ function bindEvents() {
     setViewMode('library');
   }));
 
-  // 쌓아보기 / 리스트 전환
+  // 카드형 / 리스트 전환
   $('layoutToggle').addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;

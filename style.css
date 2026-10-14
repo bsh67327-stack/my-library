@@ -99,7 +99,24 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
 }
 .toolbar input[type="search"] { color: var(--text); padding-top: 11px; padding-bottom: 11px; }
 
-#homeSearch { margin: 4px 0 30px; }
+#homeSearch { margin: 4px 0 12px; }
+
+/* 홈 작품 찾기 배너 (웹소소 "뭐 읽을지 고민될 때"처럼) */
+.finder-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; margin-bottom: 30px; padding: 16px 12px 16px 20px;
+  border: none; border-radius: 18px; text-align: left;
+  background: linear-gradient(120deg, var(--accent-soft), #fff8f2);
+  color: var(--text); font-weight: 400;
+}
+.fb-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fb-text b { display: inline-flex; align-items: center; gap: 2px; font-size: 1.05rem; font-weight: 800; }
+.fb-text b svg { width: 18px; height: 18px; }
+.fb-text small { font-size: 0.8rem; color: var(--sub); }
+.fb-art { flex: none; width: 84px; height: 70px; }
+@media (prefers-color-scheme: dark) {
+  .finder-banner { background: linear-gradient(120deg, var(--accent-soft), var(--surface)); }
+}
 
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
 .sec-head h2 { font-size: 1.12rem; font-weight: 800; }
@@ -229,10 +246,10 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
 .tile .progress-text { flex: 1; font-size: 0.66rem; }
 .tile .plus-btn { font-size: 0.64rem; padding: 1px 7px; }
 
-/* ===== 서재: 쌓아보기 (책등을 쌓은 모양) ===== */
+/* ===== 홈 최근 기록: 책등을 쌓은 모양 ===== */
 .stack {
   display: flex; flex-direction: column; align-items: center;
-  max-width: 420px; margin: 18px auto 0; padding-bottom: 14px;
+  max-width: 420px; margin: 6px auto 0; padding-bottom: 14px;
   position: relative;
 }
 /* 맨 아래 받침대 */
@@ -536,6 +553,33 @@ body.overlay-open { position: fixed; left: 0; right: 0; overflow: hidden; }
 .text-btn { background: none; border: none; padding: 8px 6px; font-weight: 700; color: var(--sub); }
 .overlay-body { padding: 8px 20px 0; }
 .wide { width: 100%; padding: 13px; }
+
+/* 작품 찾기 화면: 고를 것들 + 아래에 붙은 초기화 / 작품 찾기 */
+.overlay-title { font-size: 1.05rem; font-weight: 700; }
+.finder { padding-bottom: 110px; }
+.finder h3 { margin: 22px 0 12px; font-size: 1rem; font-weight: 700; }
+.finder h3:first-child { margin-top: 10px; }
+.picks { display: flex; flex-wrap: wrap; gap: 8px; }
+.f-pick {
+  padding: 9px 16px; border: 1px solid transparent; border-radius: 999px;
+  background: var(--surface-2); color: var(--sub); font-size: 0.9rem; font-weight: 400;
+}
+.f-pick.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+.picks-seg { display: grid; grid-template-columns: 1fr 1fr; }
+.picks-seg .f-pick { border-radius: 12px; padding: 13px; }
+.finder-note { margin-top: 10px; font-size: 0.76rem; color: var(--muted); }
+.finder-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: grid; grid-template-columns: auto 1fr; gap: 10px;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, var(--bg) 25%);
+}
+.finder-reset {
+  display: inline-flex; align-items: center; gap: 6px; padding: 14px 18px;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--bg); color: var(--sub); font-weight: 400;
+}
+.finder-reset svg { width: 17px; height: 17px; }
+.finder-bar .primary { padding: 14px; border-radius: 14px; font-size: 1rem; }
 
 /* 검색 화면 */
 .search-form { flex: 1; }

@@ -17,7 +17,7 @@
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
   <!-- 글꼴: Pretendard -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=40">
+  <link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
   <main>
@@ -29,6 +29,21 @@
 
       <!-- 누르면 작품 추가 창이 열리고 플랫폼 검색을 바로 할 수 있음 -->
       <button type="button" id="homeSearch" class="search-fake">작품을 검색해서 서재에 추가해 보세요</button>
+
+      <!-- 작품 찾기 배너: 장르 · 종류 · 플랫폼 · 연재 상태로 찾기 -->
+      <button type="button" id="finderBanner" class="finder-banner">
+        <span class="fb-text">
+          <b>뭐 볼지 고민될 때<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></b>
+          <small>장르, 종류, 플랫폼, 연재 상태로 작품 찾기</small>
+        </span>
+        <svg class="fb-art" viewBox="0 0 96 80" aria-hidden="true">
+          <rect x="10" y="18" width="38" height="52" rx="5" fill="#ffd2b0" transform="rotate(-8 29 44)"/>
+          <rect x="26" y="14" width="38" height="52" rx="5" fill="#ffb37d"/>
+          <path d="M34 26h22M34 33h16M34 40h19" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="62" cy="48" r="15" fill="#fff" fill-opacity="0.75" stroke="#ff6f0f" stroke-width="5"/>
+          <path d="m73 59 11 11" stroke="#ff6f0f" stroke-width="7" stroke-linecap="round"/>
+        </svg>
+      </button>
 
       <div class="sec-head">
         <h2>보는 중 <span id="readingCount" class="count"></span></h2>
@@ -51,7 +66,7 @@
       <div id="recentList" class="list"></div>
     </section>
 
-    <!-- ===== 서재: 내 작품 검색/필터 + 쌓아보기 / 리스트 ===== -->
+    <!-- ===== 서재: 내 작품 검색/필터 + 카드형 / 리스트 ===== -->
     <section id="libraryView" hidden>
       <header class="page-head">
         <h1>서재 <span id="libCount" class="count"></span></h1>
@@ -81,13 +96,10 @@
             <option value="title">제목순</option>
           </select>
           <span class="spacer"></span>
-          <!-- 카드형 / 쌓아보기 / 리스트 전환 -->
+          <!-- 카드형 / 리스트 전환 -->
           <div class="layout-toggle" id="layoutToggle">
             <button type="button" data-layout="card" aria-label="카드형" title="카드형">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="5" height="7" rx="1"/><rect x="9.5" y="4" width="5" height="7" rx="1"/><rect x="16" y="4" width="5" height="7" rx="1"/><rect x="3" y="13" width="5" height="7" rx="1"/><rect x="9.5" y="13" width="5" height="7" rx="1"/><rect x="16" y="13" width="5" height="7" rx="1"/></svg>
-            </button>
-            <button type="button" data-layout="stack" aria-label="쌓아보기" title="쌓아보기">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="15" width="16" height="5" rx="1.5"/><rect x="6" y="9.5" width="13" height="5" rx="1.5"/><rect x="5" y="4" width="14" height="5" rx="1.5"/></svg>
             </button>
             <button type="button" data-layout="list" aria-label="리스트" title="리스트">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="5" height="6" rx="1"/><rect x="3" y="14" width="5" height="6" rx="1"/><path d="M11 6h10M11 9h6M11 16h10M11 19h6"/></svg>
@@ -167,6 +179,33 @@
   </main>
 
   <button id="addBtn" class="fab" aria-label="작품 검색해서 추가">＋</button>
+
+  <!-- ===== 작품 찾기 (홈 배너에서 열림, 찾으면 검색 화면에 결과가 나옴) ===== -->
+  <section id="finderPage" class="overlay" hidden>
+    <div class="overlay-top">
+      <button type="button" id="finderBack" class="back-btn" aria-label="뒤로">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg>
+      </button>
+      <h2 class="overlay-title">작품 찾기</h2>
+    </div>
+    <div class="overlay-body finder">
+      <h3>장르</h3>
+      <div id="finderGenres" class="picks"></div>
+      <h3>종류</h3>
+      <div id="finderTypes" class="picks"></div>
+      <h3>플랫폼</h3>
+      <div id="finderPlatforms" class="picks"></div>
+      <p class="finder-note">장르별 인기 작품을 네이버웹툰 · 카카오웹툰 · 네이버 시리즈에서 가져와요.</p>
+      <h3>연재 상태</h3>
+      <div id="finderOngoing" class="picks picks-seg"></div>
+    </div>
+    <div class="finder-bar">
+      <button type="button" id="finderReset" class="finder-reset">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>초기화
+      </button>
+      <button type="button" id="finderRun" class="primary">작품 찾기</button>
+    </div>
+  </section>
 
   <!-- ===== 검색 화면 (전체 화면) ===== -->
   <section id="searchPage" class="overlay" hidden>
@@ -405,6 +444,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=40"></script>
+  <script src="app.js?v=41"></script>
 </body>
 </html>
