@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 36;
+const APP_VERSION = 38;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -210,7 +210,7 @@ function cardHTML(w) {
       <div class="tile-info">
         <span class="stars small">${starsHTML(w.rating)}</span>
         <h3>${esc(w.title)}</h3>
-        ${w.author ? `<p class="author">${esc(w.author)}</p>` : ''}
+        ${w.author ? `<p class="author">${esc(uniqueAuthors(w.author))}</p>` : ''}
         <span class="status status-${w.status}">${STATUSES[w.status]}</span>
         ${progressHTML(w)}
       </div>
@@ -248,7 +248,7 @@ function rowHTML(w) {
       <div class="item-body">
         <p class="kicker">${esc([TYPES[w.type], w.platform].filter(Boolean).join(' · '))}</p>
         <h3>${esc(w.title)}</h3>
-        ${w.author ? `<p class="author">${esc(w.author)}</p>` : ''}
+        ${w.author ? `<p class="author">${esc(uniqueAuthors(w.author))}</p>` : ''}
         <div class="item-meta">
           <span class="stars small">${starsHTML(w.rating)}</span>
           ${w.rating ? `<b class="rating-num">${w.rating.toFixed(1)}</b>` : ''}
@@ -898,7 +898,13 @@ async function fetchSearch(sourceKey, q, page = 0) {
   const src = SEARCH_SOURCES[sourceKey];
   const data = await callServer(sourceKey, q, page, src.format === 'html');
   const items = src.parse(data);
+  items.forEach((i) => { i.author = uniqueAuthors(i.author); });
   return { items, hasMore: src.hasMore(data, page, items) };
+}
+
+// 글/그림 작가가 같은 사람이면 이름이 두 번 오는 곳이 있어서 한 번만 (예: "네스티캣, 네스티캣" → "네스티캣")
+function uniqueAuthors(author) {
+  return [...new Set(String(author || '').split(/[,/]/).map((a) => a.trim()).filter(Boolean))].join(', ');
 }
 
 // ----- 6-2. 전체 검색 -----
@@ -1332,14 +1338,21 @@ function renderDetail() {
 }
 
 function heroHTML(w) {
-  // 표지 출처: 플랫폼에서 가져온 표지만 표시 (직접 고른 사진은 표시 안 함)
-  const source = w.coverSource || (w.cover && !w.cover.startsWith('data:') && SEARCH_SOURCES[w.source]?.platform) || '';
   return `
     <div class="hero">
       ${w.cover ? `<img class="hero-bg" src="${esc(w.cover)}" alt="" onerror="this.remove()">` : ''}
       <div class="hero-cover">${coverHTML(w, 'cover').replace(' loading="lazy"', '')}</div>
-      ${source ? `<span class="cover-source">이미지 출처 · ${esc(source)}</span>` : ''}
     </div>`;
+}
+
+// 맨 아래 출처: 표지는 플랫폼에서 가져온 것만 표시 (직접 고른 사진은 표시 안 함)
+function sourceHTML(w) {
+  const cover = w.coverSource || (w.cover && !w.cover.startsWith('data:') && SEARCH_SOURCES[w.source]?.platform) || '';
+  const lines = [
+    cover && `이미지 출처 · ${esc(cover)}`,
+    w.platform && `정보 출처 · ${esc(w.platform)}`,
+  ].filter(Boolean);
+  return lines.length ? `<p class="detail-source">${lines.join('<br>')}</p>` : '';
 }
 
 // 표지 아래 부분 (작품명·내 기록·소개·보러 가기)
@@ -1349,10 +1362,11 @@ function detailHTML(w, mine) {
     <div class="detail-info">
       <p class="kicker">${esc([TYPES[w.type], w.platform].filter(Boolean).join(' · '))}</p>
       <h2 class="detail-title">${esc(w.title)}</h2>
-      <p class="detail-author">${esc([w.author, w.genre, w.ongoing].filter(Boolean).join(' · '))}</p>
+      <p class="detail-author">${esc([uniqueAuthors(w.author), w.genre, w.ongoing].filter(Boolean).join(' · '))}</p>
+      ${socialStatsHTML()}
     </div>
 
-    ${mine ? myRecordHTML(mine) : ''}
+    ${mine ? myRecordHTML(mine) : preRecordHTML()}
 
     ${w.desc ? `
       <div class="detail-sec">
@@ -1383,11 +1397,42 @@ function detailHTML(w, mine) {
       </div>` : ''}
 
     <p class="detail-note">작품 정보와 표지는 각 플랫폼에서 가져왔어요. 작품은 해당 플랫폼에서 볼 수 있어요.</p>
+    ${sourceHTML(w)}
 
     ${mine ? '' : `
       <div class="detail-cta">
         <button type="button" class="primary wide" id="detailAdd">내 서재에 담기</button>
       </div>`}`;
+}
+
+// 다른 사람들의 별점·한줄평 수 (웹소소처럼 제목 아래)
+// 아직 별점·한줄평을 모아 두는 서버가 없어서 자리만 있음 - 서버를 만들면 stats 에 { rating, ratingCount, reviewCount } 를 넣어 줌
+function socialStatsHTML(stats = null) {
+  const star = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.8 2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z"/></svg>';
+  const bubble = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>';
+  const rating = stats?.ratingCount ? `${stats.rating.toFixed(1)} <small>(${stats.ratingCount})</small>` : '아직 별점 없음';
+  return `
+    <div class="detail-stats">
+      <span>${star}${rating}</span>
+      <span>${bubble}한줄평 ${stats?.reviewCount || 0}</span>
+    </div>`;
+}
+
+// 담기 전 기록 버튼: 별점 / 보는 중 / 완독 / 하차 - 누르면 그대로 서재에 담김
+function preRecordHTML() {
+  return `
+    <div class="pre-record">
+      <button type="button" class="pre-rate" data-open-rating>
+        <span class="rate-ico">★</span> 별점 남기기
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+      </button>
+      <div class="pre-status">
+        ${['reading', 'done', 'dropped'].map((key) => `
+          <button type="button" class="st-${key}" data-pre-status="${key}">
+            ${STATUS_INFO[key].icon}<span>${STATUSES[key]}</span>
+          </button>`).join('')}
+      </div>
+    </div>`;
 }
 
 // 내 기록: 상태 / 별점 / 본 회차 / 한줄평 (누르면 바로 저장)
@@ -1443,9 +1488,11 @@ async function updateWork(id, patch) {
 }
 
 // "내 서재에 담기": 검색해서 가져온 정보 그대로 바로 저장 (보는 중, 오늘 시작)
-async function addFromGroup(group, info) {
+// record: 담기 전에 고른 상태·별점 (예: { status: 'done' }, { rating: 4 })
+async function addFromGroup(group, info, record = {}) {
   const w = groupAsWork(group, info);
   const now = Date.now();
+  const today = new Date().toLocaleDateString('sv-SE');
   const work = {
     ...w,
     id: newId(),
@@ -1454,11 +1501,13 @@ async function addFromGroup(group, info) {
     progress: 0,
     latest: 0,
     rating: 0,
-    startedAt: new Date().toLocaleDateString('sv-SE'),
+    startedAt: today,
     finishedAt: '',
     createdAt: now,
     updatedAt: now,
+    ...record,
   };
+  if (work.status === 'done') work.finishedAt = today;
   await saveOne(work);
   works = [...works, work];
   detailState = { workId: work.id };
@@ -1510,7 +1559,9 @@ const RATING_WORDS = { 0.5: '최악이에요', 1: '싫어요', 1.5: '재미없�
 let sheetRating = 0;
 
 function openRating(justFinished = false) {
-  const w = works.find((x) => x.id === detailState?.workId);
+  // 아직 서재에 없는 작품이면 검색 결과 정보로 (별점을 고르면 그때 서재에 담김)
+  const w = works.find((x) => x.id === detailState?.workId)
+    || (detailState?.group && groupAsWork(detailState.group, detailState.info));
   if (!w) return;
   $('ratingTitle').textContent = justFinished ? '다 보셨군요! 어떠셨나요?' : '이 작품, 어떠셨나요?';
   $('ratingWork').textContent = w.title;
@@ -1578,7 +1629,7 @@ function showReviewEditor() {
       <span class="item-body">
         <span class="kicker">${esc([TYPES[w.type], w.platform].filter(Boolean).join(' · '))}</span>
         <span class="review-work-title">${esc(w.title)}</span>
-        <span class="author">${esc(w.author || '')}</span>
+        <span class="author">${esc(uniqueAuthors(w.author))}</span>
       </span>
       ${reviewState.fixed ? '' : '<span class="review-change">변경</span>'}
     </button>`;
@@ -1609,7 +1660,7 @@ function renderPicker() {
           ${coverHTML(w, 'thumb')}
           <span class="item-body">
             <span class="review-work-title">${esc(w.title)}</span>
-            <span class="author">${esc([w.author, TYPES[w.type]].filter(Boolean).join(' · '))}</span>
+            <span class="author">${esc([uniqueAuthors(w.author), TYPES[w.type]].filter(Boolean).join(' · '))}</span>
           </span>
           ${w.review ? '<span class="has-review">한줄평 있음</span>' : ''}
         </button>`).join('')
@@ -1829,9 +1880,18 @@ function bindEvents() {
 
   // 작품 정보 화면: 내 기록은 누르는 즉시 저장
   $('detailBack').addEventListener('click', closeOverlay);
-  $('detailBody').addEventListener('click', (e) => {
+  $('detailBody').addEventListener('click', async (e) => {
     const id = detailState?.workId;
     if (e.target.closest('#detailAdd')) { addFromGroup(detailState.group, detailState.info); return; }
+    // 담기 전: 상태를 누르면 그 상태로 서재에 담음 (완독이면 바로 별점 창)
+    const pre = e.target.closest('[data-pre-status]');
+    if (pre && !id) {
+      const status = pre.dataset.preStatus;
+      await addFromGroup(detailState.group, detailState.info, { status });
+      if (status === 'done') openRating(true);
+      return;
+    }
+    if (e.target.closest('[data-open-rating]') && !id) { openRating(); return; }
     if (!id) return;
     const work = works.find((w) => w.id === id);
 
@@ -1868,6 +1928,12 @@ function bindEvents() {
   });
   $('ratingSheetForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!detailState?.workId) {
+      // 담기 전에 별점부터 남기면: 보는 중 + 그 별점으로 서재에 담음 (별을 안 골랐으면 아무것도 안 함)
+      if (sheetRating) await addFromGroup(detailState.group, detailState.info, { rating: sheetRating });
+      $('ratingSheet').close();
+      return;
+    }
     await updateWork(detailState.workId, { rating: sheetRating });
     $('ratingSheet').close();
   });

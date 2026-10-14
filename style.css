@@ -616,11 +616,6 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 /* 표지 그림이 그려지기 전에 주황 바탕이 비치지 않게 (그림을 못 받으면 원래 주황 표지) */
 .hero-cover .cover:has(img) { background: var(--surface-2); }
 .hero-cover .cover:has(img) .cover-fallback { visibility: hidden; }
-/* 표지 오른쪽 아래: 표지 출처 */
-.cover-source {
-  position: absolute; z-index: 1; right: 14px; bottom: calc(var(--under) - 22px);
-  font-size: 0.66rem; color: var(--muted);
-}
 #detailHero:not(:empty) + #detailBody .detail-info { position: relative; z-index: 1; margin-top: -86px; }
 @media (prefers-color-scheme: dark) {
   .hero { --wash: 17, 17, 17; }
@@ -635,8 +630,35 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .detail-info { padding: 20px 20px 4px; text-align: center; }
-.detail-title { margin-top: 4px; font-size: 1.2rem; font-weight: 800; line-height: 1.3; word-break: keep-all; }
-.detail-author { margin-top: 4px; font-size: 0.9rem; color: var(--sub); }
+.detail-title { margin-top: 6px; font-size: 1.2rem; font-weight: 800; line-height: 1.3; word-break: keep-all; }
+.detail-author { margin-top: 6px; font-size: 0.86rem; color: var(--sub); }
+/* 다른 사람들의 별점 · 한줄평 수 (작가 줄 아래, 같은 톤으로 작게) */
+.detail-stats { display: flex; justify-content: center; gap: 16px; margin-top: 10px; font-size: 0.8rem; color: var(--muted); }
+.detail-stats span { display: inline-flex; align-items: center; gap: 4px; }
+.detail-stats svg { width: 14px; height: 14px; opacity: 0.75; }
+.detail-stats small { font-size: inherit; }
+/* 담기 전 기록 버튼 (웹소소처럼: 위에 별점, 아래에 상태 3개) */
+.pre-record {
+  margin: 20px 20px 0; padding: 14px 6px 6px;
+  border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.pre-rate {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 10px 6px 14px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--sub); font-size: 0.86rem; font-weight: 400;
+}
+.pre-rate .rate-ico { font-size: 1rem; color: var(--star); }
+.pre-rate svg { width: 16px; height: 16px; color: var(--muted); }
+.pre-status { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
+.pre-status button {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px 0 8px; border: none; border-radius: 12px; background: none;
+  color: var(--sub); font-size: 0.84rem; font-weight: 400;
+}
+.pre-status button + button { border-left: 1px solid var(--border); border-radius: 0; }
+.pre-status svg { width: 24px; height: 24px; }
+.pre-status button:active { background: var(--surface-2); }
 .detail-rating { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 1.05rem; }
 .detail-sec { margin: 22px 20px 0; padding-top: 22px; border-top: 1px solid var(--border); }
 .detail-sec h3 { font-size: 1rem; font-weight: 800; margin-bottom: 12px; }
@@ -662,6 +684,7 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 .detail-dates dd { margin: 2px 0 0; font-size: 0.86rem; font-weight: 600; }
 .detail-sec .wide { margin-top: 18px; }
 .detail-note { margin: 22px 20px 0; font-size: 0.72rem; color: var(--muted); text-align: center; line-height: 1.5; }
+.detail-source { margin: 6px 20px 0; font-size: 0.66rem; color: var(--muted); text-align: center; line-height: 1.6; }
 .detail-desc { font-size: 0.92rem; line-height: 1.7; color: var(--sub); white-space: pre-line; word-break: keep-all; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag { padding: 5px 10px; border-radius: 8px; background: var(--surface-2); font-size: 0.8rem; color: var(--sub); }
