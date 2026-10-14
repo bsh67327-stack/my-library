@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -34,6 +34,7 @@ let works = [];         // 저장된 모든 작품
 let editingId = null;   // 수정 중인 작품 id (새로 추가할 땐 null)
 let formCover = '';     // 입력창에서 고른 표지 (이미지 데이터 또는 주소)
 let formRating = 0;     // 입력창에서 고른 평점 (0 = 평점 없음)
+let formCoverSource = null; // 검색으로 고른 표지와 그 플랫폼 { url, name }
 
 // 자주 쓰는 화면 요소
 const $ = (id) => document.getElementById(id);
@@ -184,6 +185,7 @@ function render() {
   $('appVersion').textContent = `v${APP_VERSION}`;
   renderHome();
   renderFeed();
+  if (!$('detailPage').hidden) renderDetail();
   if (view.mode === 'calendar') renderCalendar();
 }
 
@@ -304,12 +306,31 @@ function miniHTML(w) {
     </article>`;
 }
 
-// 카드의 "네이버웹툰 ↗ 카카오페이지 ↗" 링크 (누르면 원래 플랫폼으로 이동)
+// 리스트의 플랫폼 바로가기 아이콘 (누르면 원래 플랫폼으로 이동)
 function linksHTML(w) {
   const links = workLinks(w);
   if (!links.length) return '';
   return `<div class="go-links">${links.map((l) =>
-    `<a class="go-link" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.name)} ↗</a>`).join('')}</div>`;
+    `<a class="go-link" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.name)}에서 보기">${pfIconHTML(l.name)}</a>`).join('')}</div>`;
+}
+
+// 플랫폼 아이콘: 플랫폼 색 + 첫 글자 (공식 로고 파일이 아니라 직접 그린 표시)
+const PLATFORM_ICONS = [
+  { match: /베스트도전|도전만화/, cls: 'naver-ch', letter: 'N' },
+  { match: /네이버\s*시리즈|시리즈/, cls: 'series', letter: 'S' },
+  { match: /네이버/, cls: 'naver', letter: 'N' },
+  { match: /카카오웹툰/, cls: 'kakaowebtoon', letter: 'K' },
+  { match: /카카오/, cls: 'kakaopage', letter: 'P' },
+  { match: /미스터블루/, cls: 'mrblue', letter: 'M' },
+  { match: /리디/, cls: 'ridi', letter: 'R' },
+  { match: /레진/, cls: 'lezhin', letter: 'L' },
+  { match: /문피아/, cls: 'munpia', letter: 'M' },
+  { match: /노벨피아/, cls: 'novelpia', letter: 'N' },
+];
+
+function pfIconHTML(name) {
+  const icon = PLATFORM_ICONS.find((p) => p.match.test(name || ''));
+  return `<span class="pf-icon pf-${icon?.cls || 'etc'}" aria-label="${esc(name)}">${esc(icon?.letter || String(name || '?').charAt(0))}</span>`;
 }
 
 // 진행 막대 + "32 / 189화" + +1 버튼 (최신 회차는 직접 입력한 값)
@@ -562,13 +583,10 @@ function openEditor(work) {
 
   setFormCover(work?.cover || '');
   setFormRating(work?.rating || 0);
+  formCoverSource = work?.coverSource ? { url: work.cover, name: work.coverSource } : null;
 
-  // 새 작품이면 검색창을 펼쳐서 보여줌
-  $('searchBox').open = !work;
-  $('s-query').value = '';
-  $('s-results').innerHTML = '';
   $('editor').showModal();
-  if (!work) $('s-query').focus();
+  $('editor').scrollTop = 0;
 }
 
 function setFormCover(src) {
@@ -602,6 +620,8 @@ async function handleSubmit(e) {
     links: formLinks.map(({ name, url }) => ({ name, url })), // 보러 갈 곳 (플랫폼 링크)
     rating: formRating,
     cover: formCover,
+    // 표지를 가져온 플랫폼 (작품 정보 화면에 출처로 표시, 직접 고른 사진이면 비움)
+    coverSource: formCoverSource?.url === formCover ? formCoverSource.name : '',
     startedAt: $('f-started').value,
     finishedAt: $('f-finished').value,
     createdAt: old?.createdAt || now,
@@ -621,6 +641,8 @@ async function handleSubmit(e) {
   await saveOne(work);
   works = old ? works.map((w) => (w.id === work.id ? work : w)) : [...works, work];
   $('editor').close();
+  // 검색 결과 정보 화면에서 "내 서재에 담기"로 저장했으면, 그 화면을 내 작품 정보로 바꿈
+  if (detailState?.group) detailState = { workId: work.id };
   render();
 }
 
@@ -640,6 +662,7 @@ async function handleDelete() {
   await deleteOne(work.id);
   works = works.filter((w) => w.id !== work.id);
   $('editor').close();
+  if (detailState?.workId === work.id) closeOverlay();
   render();
 }
 
@@ -908,21 +931,26 @@ function renderSearchResults() {
     return;
   }
   const hasMore = Object.values(searchState.pages).some((p) => p.hasMore);
-  box.innerHTML = groups.map((g) => {
+  box.innerHTML = `<p class="s-count">검색 결과 <b>${groups.length}</b>${hasMore ? '+' : ''}</p>` + groups.map((g) => {
     const main = mainItem(g);
     const cover = coverItem(g);
-    const platforms = [...new Set(g.items.map((i) => SEARCH_SOURCES[i.source].platform))].join(' · ');
+    const platforms = [...new Set(g.items.map((i) => SEARCH_SOURCES[i.source].platform))];
     return `
       <button type="button" class="s-item" data-key="${esc(g.key)}">
         <img src="${esc(cover?.cover || '')}" alt="" loading="lazy"${/^#[0-9a-f]{3,8}$/i.test(cover?.coverBg || '') ? ` style="background:${cover.coverBg}"` : ''}>
-        <span><b>${esc(main.title)}</b><small>${esc([main.author, TYPES[main.type]].filter(Boolean).join(' · '))}</small><small class="s-platforms">${esc(platforms)}</small></span>
+        <span class="s-body">
+          <b>${esc(main.title)}</b>
+          <small>${esc([main.author, TYPES[main.type]].filter(Boolean).join(' · '))}</small>
+          <span class="pf-icons">${platforms.map((p) => pfIconHTML(p)).join('')}</span>
+        </span>
+        ${findInLibrary(g) ? '<span class="in-library">내 서재</span>' : ''}
       </button>`;
   }).join('') + failed + (hasMore
     ? `<button type="button" id="s-more" class="ghost s-more">더 보기 (지금 ${groups.length}개)</button>`
     : `<p class="msg">검색 결과 ${groups.length}개를 모두 봤어요.</p>`);
 }
 
-// 검색 결과를 누르면 입력칸을 자동으로 채우고, 그 작품이 있는 플랫폼 링크를 모두 넣음
+// "내 서재에 담기": 입력칸을 검색 결과로 채우고, 그 작품이 있는 플랫폼 링크를 모두 넣음
 function pickResult(group) {
   const main = mainItem(group);
   const cover = coverItem(group);
@@ -934,6 +962,7 @@ function pickResult(group) {
   $('f-platform').value = [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', ');
   $('coverUrl').value = cover?.cover || '';
   setFormCover(cover?.cover || '');
+  formCoverSource = cover?.cover ? { url: cover.cover, name: SEARCH_SOURCES[cover.source].platform } : null;
   formLinks = sorted
     .map((i) => ({ name: SEARCH_SOURCES[i.source].platform, url: safeUrl(i.url || linkOf(i.source, i.sourceId)) }))
     .filter((l) => l.url);
@@ -949,10 +978,9 @@ function pickResult(group) {
       if (formLink !== link || !url) return; // 그사이 다른 작품을 골랐으면 무시
       $('coverUrl').value = url;
       setFormCover(url);
+      formCoverSource = { url, name: src.platform };
     }).catch(() => {});
   }
-  $('searchBox').open = false;
-  $('s-results').innerHTML = '';
 }
 
 // "어디까지 봤나요?" 칸 옆의 단위(화/권) 표시
@@ -1014,6 +1042,208 @@ function addManualLink() {
 }
 
 
+// ----- 6-4. 검색 화면 (홈 검색창이나 ＋ 버튼을 누르면 열림) -----
+// 처음에는 최근 검색어·좋아한 작가·추천 키워드, 검색하면 결과 목록
+const RECENT_KEY = 'recentSearches';
+const SUGGEST_KEYWORDS = ['회귀', '빙의', '환생', '헌터', '무협', '로맨스판타지', '아카데미', '먼치킨', '아포칼립스', '게임'];
+
+function recentSearches() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { return []; }
+}
+
+function saveRecentSearches(list) {
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 10))); } catch { /* 저장 못 해도 검색은 됨 */ }
+}
+
+function openSearch(q = '') {
+  openOverlay('searchPage');
+  if (q) {
+    runSearch(q);
+  } else {
+    $('s-query').value = '';
+    showSearchIntro();
+    $('s-query').focus();
+  }
+}
+
+function showSearchIntro() {
+  $('searchIntro').hidden = false;
+  $('s-results').hidden = true;
+
+  const recent = recentSearches();
+  $('recentBlock').hidden = !recent.length;
+  $('recentKeywords').innerHTML = recent.map((k) => `
+    <span class="chip">
+      <button type="button" class="chip-word" data-q="${esc(k)}">${esc(k)}</button>
+      <button type="button" class="chip-x" data-remove="${esc(k)}" aria-label="${esc(k)} 지우기">×</button>
+    </span>`).join('');
+
+  // 4점 이상 준 작품의 작가 (최대 6명)
+  const authors = [...new Set(works.filter((w) => w.rating >= 4 && w.author)
+    .sort((a, b) => b.rating - a.rating)
+    .map((w) => w.author.split(/[,/·]/)[0].trim())
+    .filter(Boolean))].slice(0, 6);
+  $('authorBlock').hidden = !authors.length;
+  $('authorKeywords').innerHTML = authors.map((a) =>
+    `<button type="button" class="chip chip-word" data-q="${esc(a)}">${esc(a)}</button>`).join('');
+
+  $('suggestKeywords').innerHTML = SUGGEST_KEYWORDS.map((k) =>
+    `<button type="button" class="chip chip-word" data-q="${esc(k)}"># ${esc(k)}</button>`).join('');
+}
+
+function runSearch(q) {
+  q = q.trim();
+  if (!q) return;
+  $('s-query').value = q;
+  $('s-query').blur(); // 휴대폰 키보드 내리기
+  saveRecentSearches([q, ...recentSearches().filter((k) => k !== q)]);
+  $('searchIntro').hidden = true;
+  $('s-results').hidden = false;
+  searchPlatform();
+}
+
+
+// ----- 6-5. 작품 정보 화면 (웹소소처럼 정보 먼저, 수정은 버튼으로) -----
+// detailState: { workId } 내 서재 작품 / { group } 아직 서재에 없는 검색 결과
+let detailState = null;
+
+// 검색 결과가 이미 내 서재에 있는지 (제목·종류가 같으면 같은 작품)
+function findInLibrary(group) {
+  const main = mainItem(group);
+  return works.find((w) => titleKey(w.title) === titleKey(main.title) && w.type === main.type);
+}
+
+// 검색 결과 묶음을 작품 모양으로 (정보 화면에 보여주기용)
+function groupAsWork(group) {
+  const main = mainItem(group);
+  const cover = coverItem(group);
+  const sorted = [...group.items].sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
+  return {
+    title: main.title,
+    author: main.author || '',
+    type: main.type,
+    cover: cover?.cover || '',
+    coverSource: cover ? SEARCH_SOURCES[cover.source].platform : '',
+    platform: [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', '),
+    links: sorted
+      .map((i) => ({ name: SEARCH_SOURCES[i.source].platform, url: safeUrl(i.url || linkOf(i.source, i.sourceId)) }))
+      .filter((l) => l.url),
+  };
+}
+
+function openDetail(state) {
+  detailState = state;
+  renderDetail();
+  openOverlay('detailPage');
+  $('detailPage').scrollTop = 0;
+
+  // 카카오웹툰 표지만 있는 검색 결과는 대표 이미지를 불러와서 바꿈
+  const cover = state.group && coverItem(state.group);
+  const src = cover && SEARCH_SOURCES[cover.source];
+  if (src?.fetchCover) {
+    src.fetchCover(cover.sourceId).then((url) => {
+      if (!url || detailState !== state) return;
+      document.querySelectorAll('#detailBody .hero img').forEach((img) => { img.src = url; });
+    }).catch(() => {});
+  }
+}
+
+function renderDetail() {
+  if (!detailState) return;
+  const mine = detailState.workId ? works.find((w) => w.id === detailState.workId) : null;
+  const w = mine || groupAsWork(detailState.group);
+  $('detailEdit').hidden = !mine;
+  $('detailBody').innerHTML = detailHTML(w, mine);
+}
+
+function detailHTML(w, mine) {
+  const links = workLinks(w);
+  // 표지 출처: 검색으로 가져온 표지만 표시 (직접 고른 사진은 표시 안 함)
+  const source = w.coverSource || (w.cover && !w.cover.startsWith('data:') && SEARCH_SOURCES[w.source]?.platform) || '';
+  return `
+    <div class="hero">
+      ${w.cover ? `<img class="hero-bg" src="${esc(w.cover)}" alt="" onerror="this.remove()">` : ''}
+      <div class="hero-cover">${coverHTML(w, 'cover')}</div>
+      ${source ? `<span class="cover-source">이미지 출처 · ${esc(source)}</span>` : ''}
+    </div>
+
+    <div class="detail-info">
+      <p class="kicker">${esc([TYPES[w.type], w.platform].filter(Boolean).join(' · '))}</p>
+      <h2 class="detail-title">${esc(w.title)}</h2>
+      ${w.author ? `<p class="detail-author">${esc(w.author)}</p>` : ''}
+      ${mine && mine.rating ? `
+        <div class="detail-rating"><span class="stars">${starsHTML(mine.rating)}</span><b>${mine.rating.toFixed(1)}</b></div>` : ''}
+    </div>
+
+    ${links.length ? `
+      <div class="detail-sec">
+        <h3>보러 가기</h3>
+        <div class="pf-buttons">
+          ${links.map((l) => `
+            <a class="pf-btn go-link" href="${esc(l.url)}" target="_blank" rel="noopener">
+              ${pfIconHTML(l.name)}<span>${esc(l.name)}</span>
+            </a>`).join('')}
+        </div>
+      </div>` : ''}
+
+    ${mine ? myRecordHTML(mine) : `
+      <div class="detail-sec">
+        <button type="button" class="primary wide" id="detailAdd">내 서재에 담기</button>
+      </div>`}
+
+    <p class="detail-note">작품 정보와 표지는 각 플랫폼에서 가져왔어요. 작품은 해당 플랫폼에서 볼 수 있어요.</p>`;
+}
+
+// 작품 정보 화면의 "내 기록"
+function myRecordHTML(w) {
+  const dates = [
+    ['보기 시작한 날', w.startedAt],
+    ['다 본 날', w.finishedAt],
+    ['서재에 담은 날', dateKey(w.createdAt)],
+  ].filter(([, d]) => d);
+  return `
+    <div class="detail-sec">
+      <div class="sec-row">
+        <h3>내 기록</h3>
+        <span class="status status-${w.status}">${STATUSES[w.status]}</span>
+      </div>
+      ${progressHTML(w)}
+      ${w.review
+        ? `<p class="detail-review">${esc(w.review)}</p>`
+        : '<p class="detail-empty">아직 한줄평이 없어요.</p>'}
+      ${dates.length ? `
+        <dl class="detail-dates">
+          ${dates.map(([label, d]) => `<div><dt>${label}</dt><dd>${d.replaceAll('-', '. ')}</dd></div>`).join('')}
+        </dl>` : ''}
+      <button type="button" class="ghost wide" data-edit>기록 수정</button>
+    </div>`;
+}
+
+
+// ----- 6-6. 전체 화면 창 (검색, 작품 정보) -----
+// 열 때마다 방문 기록을 하나 남겨서, 휴대폰의 뒤로 가기로 닫히게 함
+const overlayStack = [];
+
+function openOverlay(id) {
+  if (overlayStack[overlayStack.length - 1] === id) return;
+  $(id).hidden = false;
+  overlayStack.push(id);
+  document.body.classList.add('overlay-open');
+  history.pushState({ overlay: id }, '');
+}
+
+function closeOverlay() {
+  history.back();
+}
+
+window.addEventListener('popstate', () => {
+  const id = overlayStack.pop();
+  if (id) $(id).hidden = true;
+  if (id === 'detailPage') detailState = null;
+  document.body.classList.toggle('overlay-open', overlayStack.length > 0);
+});
+
+
 // ----- 7. 백업 / 복원 -----
 function exportBackup() {
   const data = { app: 'my-library', version: 1, exportedAt: new Date().toISOString(), nickname: nicknameNow, works };
@@ -1059,13 +1289,13 @@ function bindEvents() {
   $('sortSelect').addEventListener('change', (e) => { view.sort = e.target.value; render(); });
   $('search').addEventListener('input', (e) => { view.query = e.target.value; render(); });
 
-  // 카드 누르면 수정 창 열기
+  // 카드 누르면 작품 정보 화면 열기
   const onCardClick = (e) => {
-    if (e.target.closest('.go-link')) return; // "보러 가기"는 링크만 열고 수정 창은 안 엶
+    if (e.target.closest('.go-link')) return; // 플랫폼 아이콘은 링크만 열고 정보 화면은 안 엶
     const plus = e.target.closest('.plus-btn');
     if (plus) { addProgress(plus.dataset.id); return; }
     const card = e.target.closest('.card');
-    if (card) openEditor(works.find((w) => w.id === card.dataset.id));
+    if (card) openDetail({ workId: card.dataset.id });
   };
   $('grid').addEventListener('click', onCardClick);
   $('calDayList').addEventListener('click', onCardClick);
@@ -1073,17 +1303,51 @@ function bindEvents() {
   $('recentList').addEventListener('click', onCardClick);
   $('feedList').addEventListener('click', onCardClick);
 
-  // 추천: 작가 카드는 그 작가 이름으로 플랫폼 검색, 나머지는 수정 창
+  // 추천: 작가 카드는 그 작가 이름으로 검색, 나머지는 작품 정보
   $('recRow').addEventListener('click', (e) => {
     const rec = e.target.closest('[data-author]');
-    if (!rec) { onCardClick(e); return; }
-    openEditor(null);
-    $('s-query').value = rec.dataset.author;
-    searchPlatform();
+    if (rec) openSearch(rec.dataset.author);
+    else onCardClick(e);
   });
 
-  // 홈 검색창: 작품 추가 창을 열고 플랫폼 검색부터
-  $('homeSearch').addEventListener('click', () => openEditor(null));
+  // 홈 검색창 / ＋ 버튼: 검색 화면 열기
+  $('homeSearch').addEventListener('click', () => openSearch());
+  $('addBtn').addEventListener('click', () => openSearch());
+
+  // 검색 화면
+  $('searchBack').addEventListener('click', closeOverlay);
+  $('searchForm').addEventListener('submit', (e) => { e.preventDefault(); runSearch($('s-query').value); });
+  $('s-query').addEventListener('input', (e) => { if (!e.target.value.trim()) showSearchIntro(); });
+  $('searchIntro').addEventListener('click', (e) => {
+    const remove = e.target.closest('[data-remove]');
+    if (remove) {
+      saveRecentSearches(recentSearches().filter((k) => k !== remove.dataset.remove));
+      showSearchIntro();
+      return;
+    }
+    const word = e.target.closest('[data-q]');
+    if (word) runSearch(word.dataset.q);
+    if (e.target.closest('#recentClear')) { saveRecentSearches([]); showSearchIntro(); }
+    if (e.target.closest('#manualAdd')) openEditor(null);
+  });
+  $('s-results').addEventListener('click', (e) => {
+    if (e.target.closest('#s-more')) { searchPlatform(true); return; }
+    const item = e.target.closest('.s-item');
+    if (!item) return;
+    const group = searchState.groups.get(item.dataset.key);
+    const mine = findInLibrary(group);
+    openDetail(mine ? { workId: mine.id } : { group });
+  });
+
+  // 작품 정보 화면
+  $('detailBack').addEventListener('click', closeOverlay);
+  $('detailEdit').addEventListener('click', () => openEditor(works.find((w) => w.id === detailState?.workId)));
+  $('detailBody').addEventListener('click', (e) => {
+    const plus = e.target.closest('.plus-btn');
+    if (plus) { addProgress(plus.dataset.id); return; }
+    if (e.target.closest('[data-edit]')) openEditor(works.find((w) => w.id === detailState?.workId));
+    if (e.target.closest('#detailAdd')) { openEditor(null); pickResult(detailState.group); }
+  });
 
   // 홈 "전체 보기" / "서재로": 서재 화면으로 이동 (보는 중이면 상태 필터도 같이)
   document.querySelectorAll('.sec-head .more').forEach((btn) => btn.addEventListener('click', () => {
@@ -1133,7 +1397,6 @@ function bindEvents() {
     touchX = null;
     if (Math.abs(dx) > 60) moveMonth(dx < 0 ? 1 : -1);
   });
-  $('addBtn').addEventListener('click', () => openEditor(null));
 
   // 입력 창
   $('workForm').addEventListener('submit', handleSubmit);
@@ -1180,18 +1443,6 @@ function bindEvents() {
     setFormCover('');
   });
 
-  // 플랫폼 검색 (엔터를 눌러도 저장되지 않고 검색되도록)
-  $('s-btn').addEventListener('click', () => searchPlatform());
-  $('s-query').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); searchPlatform(); }
-  });
-  $('s-results').addEventListener('click', (e) => {
-    if (e.target.closest('#s-more')) { searchPlatform(true); return; }
-    const item = e.target.closest('.s-item');
-    if (item) pickResult(searchState.groups.get(item.dataset.key));
-  });
-
-  // 백업 / 복원
   // 닉네임 설정
   $('nickBtn').addEventListener('click', () => { $('menu').open = false; openNickname(); });
   $('nickCancel').addEventListener('click', () => $('nickDialog').close());
@@ -1202,6 +1453,7 @@ function bindEvents() {
     render();
   });
 
+  // 백업 / 복원
   $('exportBtn').addEventListener('click', () => { $('menu').open = false; exportBackup(); });
   $('importBtn').addEventListener('click', () => { $('menu').open = false; $('importFile').click(); });
   $('importFile').addEventListener('change', (e) => {

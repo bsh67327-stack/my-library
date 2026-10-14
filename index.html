@@ -16,7 +16,7 @@
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
   <!-- 글꼴: Pretendard -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=21">
+  <link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
   <main>
@@ -143,7 +143,52 @@
     </section>
   </main>
 
-  <button id="addBtn" class="fab" aria-label="작품 추가">＋</button>
+  <button id="addBtn" class="fab" aria-label="작품 검색해서 추가">＋</button>
+
+  <!-- ===== 검색 화면 (전체 화면) ===== -->
+  <section id="searchPage" class="overlay" hidden>
+    <div class="overlay-top">
+      <button type="button" id="searchBack" class="back-btn" aria-label="뒤로">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg>
+      </button>
+      <form id="searchForm" class="search-form">
+        <input type="search" id="s-query" placeholder="작품 제목이나 작가 이름" enterkeyhint="search" autocomplete="off" aria-label="작품 검색">
+      </form>
+    </div>
+
+    <!-- 검색하기 전: 최근 검색어 / 좋아한 작가 / 추천 키워드 -->
+    <div id="searchIntro" class="overlay-body">
+      <div id="recentBlock">
+        <div class="sec-head">
+          <h2>최근 검색어</h2>
+          <button type="button" id="recentClear" class="more">전체 삭제</button>
+        </div>
+        <div id="recentKeywords" class="chips"></div>
+      </div>
+      <div id="authorBlock">
+        <div class="sec-head"><h2>좋아한 작가</h2></div>
+        <div id="authorKeywords" class="chips"></div>
+      </div>
+      <div class="sec-head"><h2>추천 키워드</h2></div>
+      <div id="suggestKeywords" class="chips"></div>
+      <button type="button" id="manualAdd" class="manual-add">찾는 작품이 없나요? <b>직접 입력하기</b></button>
+    </div>
+
+    <!-- 검색 결과 -->
+    <div id="s-results" class="overlay-body s-results" hidden></div>
+  </section>
+
+  <!-- ===== 작품 정보 화면 (전체 화면) ===== -->
+  <section id="detailPage" class="overlay" hidden>
+    <div class="overlay-top detail-top">
+      <button type="button" id="detailBack" class="back-btn" aria-label="뒤로">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg>
+      </button>
+      <span class="spacer"></span>
+      <button type="button" id="detailEdit" class="text-btn">수정</button>
+    </div>
+    <div id="detailBody"></div>
+  </section>
 
   <!-- ===== 아래 탭바: 홈 / 서재 / 피드 / 캘린더 ===== -->
   <nav class="tabbar" id="viewTabs">
@@ -183,16 +228,6 @@
   <dialog id="editor">
     <form id="workForm">
       <h2 id="editorTitle">작품 추가</h2>
-
-      <!-- 작품 검색해서 자동으로 채우기 (모든 플랫폼을 한꺼번에 검색) -->
-      <details id="searchBox" class="search-box">
-        <summary>🔍 작품 검색해서 채우기</summary>
-        <div class="search-row">
-          <input type="search" id="s-query" placeholder="작품 제목" enterkeyhint="search">
-          <button type="button" id="s-btn" class="primary">검색</button>
-        </div>
-        <div id="s-results" class="s-results"></div>
-      </details>
 
       <div class="cover-field">
         <div id="coverPreview" class="cover-preview"><span>표지 없음</span></div>
@@ -294,6 +329,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=21"></script>
+  <script src="app.js?v=22"></script>
 </body>
 </html>
