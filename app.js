@@ -11,17 +11,18 @@ const fixType = (w) => (w && w.type === 'manga' ? { ...w, type: 'comic' } : w);
 // 예전에 웹툰으로 담은 일본 만화(작가 이름으로 판단)를 만화로 바꿈 - 한 번만 실행
 // (그 뒤에 직접 웹툰으로 되돌린 작품은 다시 바꾸지 않음)
 async function fixSavedManga() {
-  try { if (localStorage.getItem('mangaFix1')) return; } catch { return; }
+  // mangaFix2: 판단 기준을 넓힌 뒤 한 번 더 (작가 한 명만 확실히 일본 이름이어도 만화로)
+  try { if (localStorage.getItem('mangaFix2')) return; } catch { return; }
   const isManga = (w) => w.type === 'webtoon' && looksJapaneseAuthor(String(w.author || '').split(/[,/]/));
   const changed = works.filter(isManga).map((w) => ({ ...w, type: 'comic', unit: w.unit || '화' }));
   for (const w of changed) await saveOne(w);
   if (changed.length) works = works.map((w) => changed.find((c) => c.id === w.id) || w);
-  try { localStorage.setItem('mangaFix1', '1'); } catch { /* 다음에 다시 시도 */ }
+  try { localStorage.setItem('mangaFix2', '1'); } catch { /* 다음에 다시 시도 */ }
 }
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 50;
+const APP_VERSION = 53;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -30,7 +31,7 @@ const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
 // layout: 서재를 카드형(card) / 리스트(list) 중 무엇으로 볼지 (마지막에 고른 것을 기억)
 // (책을 쌓은 모양은 홈 "최근 기록"으로 옮김)
 const LAYOUTS = ['card', 'list'];
-const view = { mode: 'home', layout: savedLayout(), type: 'all', status: 'all', sort: 'updated', query: '' };
+const view = { mode: 'home', layout: savedLayout(), type: 'all', status: 'all', genre: 'all', ongoing: 'all', rating: 'all', sort: 'updated', query: '' };
 
 function savedLayout() {
   try {
@@ -104,13 +105,22 @@ function unitOf(type, unit) {
 // - "아쿠타미 게게", "에토 슌지"처럼 띄어 쓴 한글 이름 중 받침이 없거나 ㄴ 받침만 있는 것
 //   (일본 이름을 한글로 쓰면 받침이 거의 없음 - "그림왕 양치기", "엘렌 심", "네이버웹툰 작가"는 걸러짐)
 // 플랫폼이 일본 만화를 따로 표시하지 않고 웹툰으로 보내는 경우가 많아서 (카카오페이지 연재본, 네이버웹툰 아인 등)
+// 작가 중 한 명이라도 확실히 일본 이름이고, 나머지도 일본 필명일 수 있는 모양(받침 없는 한글 한 단어 "즈이노",
+// 영문 한 단어 "ONE")이면 일본 만화로 봄 (예: "케이야마 케이, 즈이노" → 만화 / "LICO, 비가" → 확실한 일본 이름이 없어서 웹툰)
 const noBatchimExceptN = (text) => [...text].every((ch) => [0, 4].includes((ch.charCodeAt(0) - 0xac00) % 28));
+const isCompanyName = (n) =>
+  /studio|animation|comics?|cartoon|toon|entertainment|media|works|team|group|production|company|literature|스튜디오|코믹스|엔터|미디어|컴퍼니/i.test(n);
+// 일본어 로마자 모양의 영문 낱말 (Horikoshi, Sakurai, EIICHIRO 등 - l·v·x·c 없음, 끝 받침은 n 만)
+// "Lee", "Payne", "Bill", "Changpan" 같은 영어·한국·중국 이름은 걸러짐
+const ROMAJI_WORD = /^(?:(?:sh|ch|ts|[kgsztdnhbpmr]y|[kgszjtdnhfbpmyrw])?[aeiou]+|n(?![aeiou])|([kstp])(?=\1))+$/i;
+const romajiName = (n) => n.split(' ').every((w) => w.replace(/[.'\-]/g, '').length >= 2 && ROMAJI_WORD.test(w.replace(/[.'\-]/g, '')));
+const clearlyJapanese = (n) => (/^[A-Za-z.'\-]+( [A-Za-z.'\-]+)+$/.test(n) && romajiName(n)) ||
+  (/^[가-힣]{2,5} [가-힣]{1,5}$/.test(n) && noBatchimExceptN(n.replace(' ', '')));
+const maybeJapanese = (n) => clearlyJapanese(n) || (/^[가-힣]{2,5}$/.test(n) && noBatchimExceptN(n)) ||
+  (/^[A-Za-z.'\-]+$/.test(n) && romajiName(n));
 function looksJapaneseAuthor(names) {
   const list = names.map((n) => String(n).replace(/\([^)]*\)/g, '').trim()).filter(Boolean);
-  return list.length > 0 && list.every((n) =>
-    !/studio|animation|comics?|cartoon|toon|entertainment|media|works|team|group|production|company/i.test(n) &&
-    (/^[A-Za-z.'\-]+( [A-Za-z.'\-]+)+$/.test(n) ||
-      (/^[가-힣]{2,5} [가-힣]{1,5}$/.test(n) && noBatchimExceptN(n.replace(' ', '')))));
+  return list.length > 0 && !list.some(isCompanyName) && list.some(clearlyJapanese) && list.every(maybeJapanese);
 }
 
 // http(s)로 시작하는 주소만 링크로 씀 (이상한 주소가 실행되지 않게)
@@ -172,24 +182,19 @@ function resizeImage(file, maxWidth = 400) {
 function render() {
   const q = view.query.trim().toLowerCase();
 
-  // (1) 거르기
+  // (1) 거르기 (종류 · 읽기 상태 · 장르 · 연재 상태 · 별점 · 검색어)
   let list = works.filter((w) =>
-    (view.type === 'all' || w.type === view.type) &&
-    (view.status === 'all' || w.status === view.status) &&
+    Object.keys(LIB_FILTERS).every((key) => view[key] === 'all' || LIB_FILTERS[key].match(w, view[key])) &&
     (!q || [w.title, w.author, w.review, w.platform].some((t) => (t || '').toLowerCase().includes(q)))
   );
 
   // (2) 정렬하기
-  const sorters = {
-    updated: (a, b) => b.updatedAt - a.updatedAt,
-    created: (a, b) => b.createdAt - a.createdAt,
-    rating: (a, b) => b.rating - a.rating || b.updatedAt - a.updatedAt,
-    title: (a, b) => a.title.localeCompare(b.title, 'ko'),
-  };
-  list.sort(sorters[view.sort]);
+  list.sort((LIB_SORTS.find((s) => s.key === view.sort) || LIB_SORTS[0]).cmp);
 
   // (3) 카드형 / 리스트로 그리기
   $('libCount').textContent = list.length || '';
+  $('libTotal').textContent = `${list.length}개`;
+  renderLibFilters();
   $('grid').className = `layout-${view.layout}`;
   $('grid').innerHTML = list.map(view.layout === 'card' ? cardHTML : rowHTML).join('');
   document.querySelectorAll('#layoutToggle button')
@@ -207,6 +212,79 @@ function render() {
   renderFeed();
   if (!$('detailPage').hidden) renderDetail();
   if (view.mode === 'calendar') renderCalendar();
+}
+
+// 서재 필터: 칩을 누르면 아래에서 고르는 창이 올라옴 ('all' = 전체)
+// options() 는 [값, 이름] 목록, match(작품, 값) 은 그 값에 맞는지
+const LIB_FILTERS = {
+  type: {
+    label: '종류',
+    options: () => Object.entries(TYPES),
+    match: (w, v) => w.type === v,
+  },
+  status: {
+    label: '읽기 상태',
+    options: () => Object.entries(STATUSES),
+    match: (w, v) => w.status === v,
+  },
+  // 장르는 서재에 있는 작품들의 장르로 (많은 순)
+  genre: {
+    label: '장르',
+    options: () => {
+      const count = {};
+      works.forEach((w) => { if (w.genre) count[w.genre] = (count[w.genre] || 0) + 1; });
+      return Object.keys(count).sort((a, b) => count[b] - count[a]).map((g) => [g, g]);
+    },
+    match: (w, v) => w.genre === v,
+  },
+  ongoing: {
+    label: '연재 상태',
+    options: () => [['연재중', '연재중'], ['완결', '완결'], ['none', '정보 없음']],
+    match: (w, v) => (v === 'none' ? !w.ongoing : v === '완결' ? /완결/.test(w.ongoing || '') : w.ongoing === v),
+  },
+  rating: {
+    label: '별점',
+    options: () => [['5', '5점'], ['4', '4점 이상'], ['3', '3점 이상'], ['low', '3점 미만'], ['none', '별점 없음']],
+    match: (w, v) => {
+      const r = w.rating || 0;
+      return v === 'none' ? !r : v === 'low' ? r > 0 && r < 3 : r >= Number(v);
+    },
+  },
+};
+
+// 서재 정렬
+const LIB_SORTS = [
+  { key: 'updated', label: '최근 수정순', cmp: (a, b) => b.updatedAt - a.updatedAt },
+  { key: 'created', label: '등록 최신순', cmp: (a, b) => b.createdAt - a.createdAt },
+  { key: 'createdOld', label: '등록 오래된순', cmp: (a, b) => a.createdAt - b.createdAt },
+  { key: 'title', label: '제목순', cmp: (a, b) => a.title.localeCompare(b.title, 'ko') },
+  { key: 'rating', label: '별점 높은순', cmp: (a, b) => (b.rating || 0) - (a.rating || 0) || b.updatedAt - a.updatedAt },
+  { key: 'ratingLow', label: '별점 낮은순', cmp: (a, b) => (a.rating || 0) - (b.rating || 0) || b.updatedAt - a.updatedAt },
+];
+
+const CHEVRON = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>';
+const CHECK = '<svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+
+// 필터 칩 (고른 게 있으면 그 이름을 보여주고 색을 칠함)
+function renderLibFilters() {
+  $('libFilters').innerHTML = Object.entries(LIB_FILTERS).map(([key, f]) => {
+    const picked = view[key] !== 'all' && f.options().find(([v]) => v === view[key]);
+    return `<button type="button" class="lf-chip${picked ? ' active' : ''}" data-filter-key="${key}">${esc(picked ? picked[1] : f.label)}${CHEVRON}</button>`;
+  }).join('');
+  $('sortLabel').textContent = (LIB_SORTS.find((s) => s.key === view.sort) || LIB_SORTS[0]).label;
+}
+
+// 고르는 창 열기: kind 가 'sort' 면 정렬, 아니면 필터 이름
+function openPickSheet(kind) {
+  const isSort = kind === 'sort';
+  const current = isSort ? view.sort : view[kind];
+  const options = isSort ? LIB_SORTS.map((s) => [s.key, s.label]) : [['all', '전체'], ...LIB_FILTERS[kind].options()];
+  $('pickTitle').textContent = isSort ? '정렬' : LIB_FILTERS[kind].label;
+  $('pickList').innerHTML = options.map(([v, label]) => `
+    <button type="button" class="pick-option${v === current ? ' active' : ''}" data-pick-kind="${kind}" data-pick-value="${esc(v)}">
+      ${v === current ? CHECK : '<span class="check"></span>'}<span>${esc(label)}</span>
+    </button>`).join('');
+  $('pickSheet').showModal();
 }
 
 // 표지 (사진이 없거나 못 불러오면 제목 글자로 대신)
@@ -697,6 +775,7 @@ const seriesSource = (kind) => ({
       ongoing: /미완결|연재/.test(data.ongoing || '') ? '연재중' : /완결/.test(data.ongoing || '') ? '완결' : '',
       desc: data.desc || '',
       tags: data.tags || [],
+      loginOnly: !!data.loginOnly, // 19세 작품은 네이버 로그인이 있어야 열림
     };
   },
 });
@@ -779,7 +858,8 @@ const SEARCH_SOURCES = {
       try { path = new URL(item.url).pathname.slice(1); } catch { return {}; }
       if (!/^(novel|comic|webtoon)\/[A-Za-z0-9_]+$/.test(path)) return {};
       const data = await callServer('mrblueInfo', path);
-      return { desc: data.desc || '', tags: data.tags || [] };
+      // 19세 작품은 미스터블루 로그인이 있어야 작품 페이지가 열려서 소개를 못 받음
+      return { desc: data.desc || '', tags: data.tags || [], loginOnly: !!data.loginOnly };
     },
   },
   kakaoWebtoon: {
@@ -993,10 +1073,11 @@ function renderSearchResults() {
       sourceRank(mainItem(a).source) - sourceRank(mainItem(b).source) ||
       a.order - b.order
   );
-  // 작품 찾기에서 고른 종류 / 연재 상태로 거름
+  // 작품 찾기에서 고른 종류 / 플랫폼(그 플랫폼이 들어 있으면 다른 플랫폼에도 있어도 됨) / 연재 상태로 거름
   if (finder) {
     all = all.filter((g) =>
       (!finder.types.size || finder.types.has(mainItem(g).type)) &&
+      (!finder.platforms?.size || g.items.some((i) => finder.platforms.has(SEARCH_SOURCES[i.source].platform))) &&
       (!finder.ongoing || mergeOngoing(g.items.map((i) => i.ongoing)) === finder.ongoing));
   }
   const failed = searchState.failed.length
@@ -1133,6 +1214,31 @@ const FINDER_GENRES = [
 ];
 const FINDER_PLATFORMS = ['네이버웹툰', '카카오웹툰', '카카오페이지', '네이버 시리즈', '미스터블루'];
 
+// 키워드 (장르 대신 고름): 키워드 목록이 있는 곳만 - 네이버웹툰 태그 · 카카오웹툰 키워드 · 미스터블루 키워드
+// (카카오페이지·네이버 시리즈는 키워드별 목록이 없어서 빠짐)
+//   naverTag: 네이버웹툰 태그 번호 / kwKey: 카카오웹툰 키워드 이름 / mbNovel·mbToon·mbComic: 미스터블루 키워드 페이지
+const MB_KEY = (type, id) => `keywords/${type}?id=${id}`;
+const mbKeyword = (novelId, toonId) => ({
+  ...(novelId && { mbNovel: MB_KEY('novel', novelId) }),
+  ...(toonId && { mbToon: MB_KEY('webtoon', toonId), mbComic: MB_KEY('comic', toonId) }),
+});
+const FINDER_KEYWORDS = [
+  { name: '회귀', naverTag: '99', kwKey: '회귀물', ...mbKeyword(42, 902) },
+  { name: '빙의', naverTag: '58', kwKey: '빙의물', ...mbKeyword(25, 934) },
+  { name: '환생', naverTag: '319', kwKey: '환생물', ...mbKeyword(38, 901) },
+  { name: '헌터', naverTag: '96' },
+  { name: '먼치킨', naverTag: '53', ...mbKeyword(0, 921) },
+  { name: '아카데미', naverTag: '262' },
+  { name: '아포칼립스', naverTag: '122' },
+  { name: '게임', naverTag: '344', ...mbKeyword(0, 908) },
+  { name: '이세계', naverTag: '78', ...mbKeyword(40, 894) },
+  { name: '복수', naverTag: '57', kwKey: '복수물', ...mbKeyword(24, 885) },
+  { name: '계약결혼', naverTag: '64', ...mbKeyword(44, 964) },
+  { name: '육아', naverTag: '126', kwKey: '육아물', ...mbKeyword(136, 893) },
+  { name: '힐링', naverTag: '130', kwKey: '힐링물', ...mbKeyword(141, 903) },
+  { name: '성장', naverTag: '227', kwKey: '성장물', ...mbKeyword(130, 889) },
+];
+
 // 고른 종류에 맞는 목록만 (types 가 비어 있으면 전체)
 const wantType = (types, ...these) => !types.size || these.some((t) => types.has(t));
 
@@ -1166,8 +1272,12 @@ const FINDER_FETCH = {
       return { items: (d.curationViewList || []).map(naverListItem), hasMore: naverHasMore(d) };
     })()] : []),
   ]),
-  // 카카오웹툰 장르 랭킹 (100개, 다음 페이지 없음)
+  // 카카오웹툰: 키워드는 키워드 검색 (검색 결과와 같은 모양) / 장르는 장르 랭킹 (100개, 다음 페이지 없음)
   kakaoWebtoon: async (g, page) => {
+    if (g.kwKey) {
+      const d = await callServer('kakaoWebtoonKeyword', g.kwKey, page);
+      return { items: SEARCH_SOURCES.kakaoWebtoon.parse(d), hasMore: SEARCH_SOURCES.kakaoWebtoon.hasMore(d) };
+    }
     if (page > 0) return { items: [], hasMore: false };
     const d = await callServer('kakaoWebtoonRank', g.kw, 0);
     const ongoing = { EPISODES_PUBLISHING: '연재중', COMPLETED: '완결', END_OF_SEASON: '시즌 완결', SEASON_COMPLETED: '시즌 완결' };
@@ -1253,7 +1363,8 @@ function parseMrblueGenre(html, type) {
 }
 
 // 작품 찾기 화면에서 고른 것 (types·platforms 가 비어 있으면 전체)
-let finderPick = { genre: '', types: new Set(), platforms: new Set(), ongoing: '' };
+// genre 와 keyword 는 둘 중 하나만 (하나를 고르면 다른 하나는 풀림)
+let finderPick = { genre: '', keyword: '', types: new Set(), platforms: new Set(), ongoing: '' };
 
 function openFinder() {
   renderFinder();
@@ -1265,6 +1376,7 @@ function renderFinder() {
   const pick = (kind, value, label, on) =>
     `<button type="button" class="f-pick${on ? ' active' : ''}" data-pick="${kind}" data-value="${esc(value)}">${esc(label)}</button>`;
   $('finderGenres').innerHTML = FINDER_GENRES.map((g) => pick('genre', g.name, g.name, finderPick.genre === g.name)).join('');
+  $('finderKeywords').innerHTML = FINDER_KEYWORDS.map((k) => pick('keyword', k.name, k.name, finderPick.keyword === k.name)).join('');
   $('finderTypes').innerHTML = Object.entries(TYPES).map(([t, label]) => pick('types', t, label, finderPick.types.has(t))).join('');
   $('finderPlatforms').innerHTML = FINDER_PLATFORMS.map((p) => pick('platforms', p, p, finderPick.platforms.has(p))).join('');
   $('finderOngoing').innerHTML = ['연재중', '완결'].map((o) => pick('ongoing', o, o, finderPick.ongoing === o)).join('');
@@ -1272,12 +1384,13 @@ function renderFinder() {
 
 // 고른 장르·종류·플랫폼·연재 상태로 받아 올 곳
 // (미스터블루는 목록에 연재 상태가 없어서 연재 상태를 고르면 뺌)
+// 플랫폼은 여기서 거르지 않고 모든 플랫폼에서 받은 뒤, 고른 플랫폼이 들어 있는 작품만 남김
+// (그래야 고른 플랫폼 + 다른 플랫폼에도 있는 작품이 플랫폼 아이콘까지 다 나옴)
 function finderSources(g) {
-  const ok = (platform, ...types) =>
-    (!finderPick.platforms.size || finderPick.platforms.has(platform)) && wantType(finderPick.types, ...types);
+  const ok = (platform, ...types) => wantType(finderPick.types, ...types);
   return [
     (g.naver || g.naverTag) && ok('네이버웹툰', 'webtoon') && 'naverWebtoon',
-    g.kw && ok('카카오웹툰', 'webtoon') && 'kakaoWebtoon',
+    (g.kw || g.kwKey) && ok('카카오웹툰', 'webtoon') && 'kakaoWebtoon',
     ((g.kpToon && ok('카카오페이지', 'webtoon', 'comic')) || (g.kpNovel && ok('카카오페이지', 'webnovel'))) && 'kakao',
     g.novel && ok('네이버 시리즈', 'webnovel') && 'seriesNovel',
     g.comic && ok('네이버 시리즈', 'webtoon', 'comic') && 'seriesComic',
@@ -1287,13 +1400,14 @@ function finderSources(g) {
 }
 
 function runFinder() {
-  const g = FINDER_GENRES.find((x) => x.name === finderPick.genre);
-  if (!g) { toast('장르를 골라 주세요'); return; }
+  // 장르 또는 키워드 (키워드도 장르와 같은 모양이라 그대로 씀)
+  const g = FINDER_GENRES.find((x) => x.name === finderPick.genre) || FINDER_KEYWORDS.find((x) => x.name === finderPick.keyword);
+  if (!g) { toast('장르나 키워드를 골라 주세요'); return; }
   const sources = finderSources(g);
   if (!sources.length) { toast('이 조건으로 찾을 수 있는 곳이 없어요'); return; }
   searchState = {
     q: '', groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all' },
-    finder: { genre: g, sources, types: new Set(finderPick.types), ongoing: finderPick.ongoing },
+    finder: { genre: g, sources, types: new Set(finderPick.types), platforms: new Set(finderPick.platforms), ongoing: finderPick.ongoing },
   };
   openOverlay('searchPage');
   $('s-query').value = '';
@@ -1385,7 +1499,8 @@ function openSearch(q = '') {
   } else {
     $('s-query').value = '';
     showSearchIntro();
-    $('s-query').focus({ preventScroll: true });
+    // 키보드는 검색창을 직접 눌렀을 때만 올라오게 (창을 열자마자 올라오면 아이폰에서 화면이 위로 밀림)
+    $('searchPage').scrollTop = 0;
   }
 }
 
@@ -1412,15 +1527,6 @@ function showSearchIntro() {
         <span class="gi-name">${esc(g.name)}</span>
       </button>`;
   }).join('');
-
-  // 4점 이상 준 작품의 작가 (최대 6명)
-  const authors = [...new Set(works.filter((w) => w.rating >= 4 && w.author)
-    .sort((a, b) => b.rating - a.rating)
-    .map((w) => w.author.split(/[,/·]/)[0].trim())
-    .filter(Boolean))].slice(0, 6);
-  $('authorBlock').hidden = !authors.length;
-  $('authorKeywords').innerHTML = authors.map((a) =>
-    `<button type="button" class="chip chip-word" data-q="${esc(a)}">${esc(a)}</button>`).join('');
 
   $('suggestKeywords').innerHTML = SUGGEST_KEYWORDS.map((k) =>
     `<button type="button" class="chip chip-word" data-q="${esc(k)}">${esc(k)}</button>`).join('');
@@ -1494,6 +1600,7 @@ function groupAsWork(group, info = {}) {
     ongoing: mergeOngoing([...sorted.map((i) => i.ongoing), info.ongoing]), // 연재중 / 완결
     desc: descs.sort((a, b) => b.length - a.length)[0] || '',
     tags: info.tags || [],
+    loginOnly: !!info.loginOnly, // 소개를 로그인 없이는 못 받는 19세 작품
     links: sorted
       .map((i) => ({ name: SEARCH_SOURCES[i.source].platform, url: safeUrl(i.url || linkOf(i.source, i.sourceId)) }))
       .filter((l) => l.url),
@@ -1527,6 +1634,7 @@ function mergeInfo(results) {
     if (r.tags?.length && !info.tags?.length) info.tags = r.tags;
     if (r.desc && r.desc.length > (info.desc || '').length) info.desc = r.desc;
     info.ongoing = mergeOngoing([info.ongoing, r.ongoing]);
+    if (r.loginOnly) info.loginOnly = true;
   }
   return info;
 }
@@ -1586,6 +1694,7 @@ async function fillMissingInfo(w) {
       genre: now.genre || found.genre || '',
       ongoing: found.ongoing || now.ongoing || '',
       tags: now.tags?.length ? now.tags : (found.tags || []),
+      loginOnly: !now.desc && !found.desc && !!found.loginOnly,
     };
     await saveOne(work);
     works = works.map((x) => (x.id === w.id ? work : x));
@@ -1650,6 +1759,10 @@ function detailHTML(w, mine) {
       <div class="detail-sec">
         <h3>작품 소개</h3>
         <p class="detail-desc">${esc(w.desc)}</p>
+      </div>` : w.loginOnly ? `
+      <div class="detail-sec">
+        <h3>작품 소개</h3>
+        <p class="detail-empty">19세 작품이라 플랫폼 로그인이 있어야 작품 소개를 볼 수 있어서 가져오지 못했어요.</p>
       </div>` : ''}
 
     ${w.tags?.length ? `
@@ -2092,16 +2205,20 @@ async function importBackup(file) {
 
 // ----- 8. 버튼·입력에 동작 연결 -----
 function bindEvents() {
-  // 필터 & 정렬
-  $('typeTabs').addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    view.type = btn.dataset.type;
-    document.querySelectorAll('#typeTabs button').forEach((b) => b.classList.toggle('active', b === btn));
+  // 필터 & 정렬: 칩·정렬 버튼을 누르면 고르는 창, 고르면 바로 적용
+  $('libFilters').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-filter-key]');
+    if (chip) openPickSheet(chip.dataset.filterKey);
+  });
+  $('sortBtn').addEventListener('click', () => openPickSheet('sort'));
+  $('pickList').addEventListener('click', (e) => {
+    const opt = e.target.closest('[data-pick-value]');
+    if (!opt) return;
+    const { pickKind, pickValue } = opt.dataset;
+    if (pickKind === 'sort') view.sort = pickValue; else view[pickKind] = pickValue;
+    $('pickSheet').close();
     render();
   });
-  $('statusFilter').addEventListener('change', (e) => { view.status = e.target.value; render(); });
-  $('sortSelect').addEventListener('change', (e) => { view.sort = e.target.value; render(); });
   $('search').addEventListener('input', (e) => { view.query = e.target.value; render(); });
 
   // 카드 누르면 작품 정보 화면 열기
@@ -2132,8 +2249,11 @@ function bindEvents() {
     const btn = e.target.closest('[data-pick]');
     if (!btn) return;
     const { pick, value } = btn.dataset;
-    if (pick === 'genre' || pick === 'ongoing') {
+    if (pick === 'genre' || pick === 'keyword' || pick === 'ongoing') {
       finderPick[pick] = finderPick[pick] === value ? '' : value;
+      // 장르와 키워드는 둘 중 하나만
+      if (pick === 'genre' && finderPick.genre) finderPick.keyword = '';
+      if (pick === 'keyword' && finderPick.keyword) finderPick.genre = '';
     } else {
       const set = finderPick[pick];
       if (set.has(value)) set.delete(value); else set.add(value);
@@ -2141,7 +2261,7 @@ function bindEvents() {
     renderFinder();
   });
   $('finderReset').addEventListener('click', () => {
-    finderPick = { genre: '', types: new Set(), platforms: new Set(), ongoing: '' };
+    finderPick = { genre: '', keyword: '', types: new Set(), platforms: new Set(), ongoing: '' };
     renderFinder();
   });
   $('finderRun').addEventListener('click', runFinder);
@@ -2162,7 +2282,7 @@ function bindEvents() {
     // 장르 아이콘: 그 장르만 골라서 바로 작품 찾기 / "장르별 검색 >": 작품 찾기 화면
     const genre = e.target.closest('[data-genre]');
     if (genre) {
-      finderPick = { genre: genre.dataset.genre, types: new Set(), platforms: new Set(), ongoing: '' };
+      finderPick = { genre: genre.dataset.genre, keyword: '', types: new Set(), platforms: new Set(), ongoing: '' };
       runFinder();
       return;
     }
@@ -2248,7 +2368,7 @@ function bindEvents() {
   });
 
   // 시트 바깥(어두운 부분)을 누르면 닫기
-  ['statusSheet', 'ratingSheet'].forEach((id) => {
+  ['statusSheet', 'ratingSheet', 'pickSheet'].forEach((id) => {
     $(id).addEventListener('click', (e) => { if (e.target === $(id)) $(id).close(); });
   });
 
@@ -2273,7 +2393,6 @@ function bindEvents() {
   // 홈 "전체 보기": 서재 화면으로 이동
   document.querySelectorAll('.sec-head .more').forEach((btn) => btn.addEventListener('click', () => {
     view.status = 'all';
-    $('statusFilter').value = view.status;
     render();
     setViewMode('library');
   }));

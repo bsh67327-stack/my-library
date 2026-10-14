@@ -213,6 +213,36 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
   font-size: 16px; font-weight: 600; color: var(--sub);
   background-position: right 4px center; background-size: 13px;
 }
+/* 서재 필터 줄: 보기 전환 | 종류 · 읽기 상태 · 장르 · 연재 상태 · 별점 (옆으로 넘김) */
+.lib-filters { display: flex; align-items: center; gap: 8px; margin: 0 -20px; padding: 0 0 0 20px; }
+.lib-filters .layout-toggle { flex: none; border-radius: 999px; }
+.lib-filters .layout-toggle button { border-radius: 999px; }
+.lf-divider { flex: none; width: 1px; height: 22px; background: var(--border); }
+.lf-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-right: 20px; }
+.lf-chips::-webkit-scrollbar { display: none; }
+.lf-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 2px;
+  padding: 7px 8px 7px 14px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--sub); font-size: 0.86rem; font-weight: 400;
+}
+.lf-chip svg { width: 18px; height: 18px; color: var(--muted); }
+.lf-chip.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+.lf-chip.active svg { color: var(--accent-strong); }
+/* 개수 + 정렬 */
+.lib-sub { display: flex; align-items: center; justify-content: space-between; font-size: 0.86rem; color: var(--muted); }
+.sort-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 0; border: none; background: none; color: var(--sub); font-size: 0.86rem; font-weight: 400; }
+.sort-btn svg { width: 16px; height: 16px; }
+/* 고르는 창 (필터·정렬): 가운데 정렬된 목록, 고른 것은 체크 + 옅은 바탕 */
+.pick-list { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; max-height: 60dvh; overflow-y: auto; }
+.pick-option {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px; border: none; border-radius: 14px; background: none;
+  color: var(--muted); font-size: 1rem; font-weight: 400;
+}
+.pick-option .check { width: 20px; height: 20px; flex: none; }
+.pick-option span.check { display: none; }
+.pick-option.active { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.pick-option.active .check { color: var(--accent); }
 .layout-toggle { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface-2); }
 .layout-toggle button { display: grid; place-items: center; width: 32px; height: 30px; padding: 0; border: none; border-radius: 8px; background: none; color: var(--muted); }
 .layout-toggle button svg { width: 18px; height: 18px; }
@@ -575,6 +605,7 @@ body.overlay-open { position: fixed; left: 0; right: 0; overflow: hidden; }
 .picks-seg { display: grid; grid-template-columns: 1fr 1fr; }
 .picks-seg .f-pick { border-radius: 12px; padding: 13px; }
 .finder-note { margin-top: 10px; font-size: 0.76rem; color: var(--muted); }
+.finder-sub { margin-left: 6px; font-size: 0.76rem; font-weight: 400; color: var(--muted); }
 .finder-bar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 2;
   display: grid; grid-template-columns: auto 1fr; gap: 10px;

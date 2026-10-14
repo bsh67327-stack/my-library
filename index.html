@@ -17,7 +17,7 @@
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
   <!-- 글꼴: Pretendard -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=50">
+  <link rel="stylesheet" href="style.css?v=53">
 </head>
 <body>
   <main>
@@ -62,28 +62,8 @@
       <!-- 검색 / 필터 (스크롤해도 화면 위에 붙어 있음) -->
       <div class="toolbar" id="toolbar">
         <input type="search" id="search" placeholder="서재에서 제목 · 작가 · 한줄평 검색">
-        <div class="tabs" id="typeTabs">
-          <button data-type="all" class="active">전체</button>
-          <button data-type="webtoon">웹툰</button>
-          <button data-type="webnovel">웹소설</button>
-          <button data-type="comic">만화</button>
-        </div>
-        <div class="filter-row">
-          <select id="statusFilter" aria-label="상태 필터">
-            <option value="all">모든 상태</option>
-            <option value="reading">보는 중</option>
-            <option value="done">완독</option>
-            <option value="paused">보류</option>
-            <option value="dropped">하차</option>
-          </select>
-          <select id="sortSelect" aria-label="정렬">
-            <option value="updated">최근 수정순</option>
-            <option value="created">최근 등록순</option>
-            <option value="rating">평점 높은순</option>
-            <option value="title">제목순</option>
-          </select>
-          <span class="spacer"></span>
-          <!-- 카드형 / 리스트 전환 -->
+        <!-- 카드형/리스트 전환 | 종류 · 읽기 상태 · 장르 · 연재 상태 · 별점 (누르면 아래에서 고르는 창) -->
+        <div class="lib-filters">
           <div class="layout-toggle" id="layoutToggle">
             <button type="button" data-layout="card" aria-label="카드형" title="카드형">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="5" height="7" rx="1"/><rect x="9.5" y="4" width="5" height="7" rx="1"/><rect x="16" y="4" width="5" height="7" rx="1"/><rect x="3" y="13" width="5" height="7" rx="1"/><rect x="9.5" y="13" width="5" height="7" rx="1"/><rect x="16" y="13" width="5" height="7" rx="1"/></svg>
@@ -92,6 +72,16 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="5" height="6" rx="1"/><rect x="3" y="14" width="5" height="6" rx="1"/><path d="M11 6h10M11 9h6M11 16h10M11 19h6"/></svg>
             </button>
           </div>
+          <span class="lf-divider"></span>
+          <div id="libFilters" class="lf-chips"></div>
+        </div>
+        <!-- 개수 + 정렬 -->
+        <div class="lib-sub">
+          <span id="libTotal"></span>
+          <button type="button" id="sortBtn" class="sort-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg>
+            <span id="sortLabel">최근 수정순</span>
+          </button>
         </div>
       </div>
 
@@ -179,11 +169,13 @@
     <div class="overlay-body finder">
       <h3>장르</h3>
       <div id="finderGenres" class="picks"></div>
+      <h3>키워드 <small class="finder-sub">장르 대신 골라요</small></h3>
+      <div id="finderKeywords" class="picks"></div>
       <h3>종류</h3>
       <div id="finderTypes" class="picks"></div>
       <h3>플랫폼</h3>
       <div id="finderPlatforms" class="picks"></div>
-      <p class="finder-note">플랫폼마다 장르가 조금씩 달라서, 고른 장르가 없는 플랫폼은 빠져요.</p>
+      <p class="finder-note">플랫폼을 고르면 그 플랫폼에 있는 작품만 보여요. 다른 플랫폼에도 있으면 같이 표시돼요.</p>
       <h3>연재 상태</h3>
       <div id="finderOngoing" class="picks picks-seg"></div>
     </div>
@@ -210,7 +202,7 @@
       </form>
     </div>
 
-    <!-- 검색하기 전: 최근 검색어 / 장르별 검색 / 키워드 검색 / 좋아한 작가 -->
+    <!-- 검색하기 전: 최근 검색어 / 장르별 검색 / 키워드 검색 -->
     <div id="searchIntro" class="overlay-body search-intro">
       <div id="recentBlock">
         <div class="sec-head">
@@ -228,10 +220,6 @@
       <div id="genreIcons" class="genre-row"></div>
       <div class="sec-head"><h2>키워드 검색</h2></div>
       <div id="suggestKeywords" class="chips"></div>
-      <div id="authorBlock">
-        <div class="sec-head"><h2>좋아한 작가</h2></div>
-        <div id="authorKeywords" class="chips"></div>
-      </div>
       <button type="button" id="manualAdd" class="manual-add">찾는 작품이 없나요? <b>직접 입력하기</b></button>
     </div>
 
@@ -251,6 +239,14 @@
   </section>
 
   <!-- ===== 상태 선택 창 ===== -->
+  <!-- ===== 서재 필터 / 정렬 고르는 창 (아래에서 올라옴) ===== -->
+  <dialog id="pickSheet" class="small-dialog sheet">
+    <form method="dialog">
+      <h2 id="pickTitle"></h2>
+      <div id="pickList" class="pick-list"></div>
+    </form>
+  </dialog>
+
   <dialog id="statusSheet" class="small-dialog sheet">
     <form method="dialog">
       <h2>상태 선택</h2>
@@ -447,6 +443,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=50"></script>
+  <script src="app.js?v=53"></script>
 </body>
 </html>
