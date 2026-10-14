@@ -10,7 +10,7 @@ const fixType = (w) => (w && w.type === 'manga' ? { ...w, type: 'comic' } : w);
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 43;
+const APP_VERSION = 44;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -87,10 +87,16 @@ function unitOf(type, unit) {
   return unit || (type === 'comic' ? '권' : '화');
 }
 
-// 작가 이름이 모두 "Koyoharu Gotouge"처럼 두 단어 이상의 영문이면 일본 만화로 추정 (→ 만화)
-// ("SIU", "ARCHE"처럼 한 단어 영문 필명은 한국 웹툰에도 많아서 제외)
+// 작가 이름이 모두 일본 작가처럼 보이면 일본 만화로 추정 (→ 만화)
+// - "Koyoharu Gotouge", "EIICHIRO ODA"처럼 두 단어 이상의 영문
+//   ("SIU", "ARCHE"처럼 한 단어 영문 필명과 "Lenvision Animation" 같은 회사 이름은 제외)
+// - "아쿠타미 게게", "오다 에이치로"처럼 띄어 쓴 한글 이름 (한국 작가는 보통 붙여 씀)
+// 플랫폼이 일본 만화를 따로 표시하지 않고 웹툰으로 보내는 경우가 많아서 (카카오페이지 연재본 등)
 function looksJapaneseAuthor(names) {
-  return names.length > 0 && names.every((n) => /^[A-Za-z.'\-]+( [A-Za-z.'\-]+)+$/.test(n.trim()));
+  const list = names.map((n) => String(n).replace(/\([^)]*\)/g, '').trim()).filter(Boolean);
+  return list.length > 0 && list.every((n) =>
+    !/studio|animation|comics?|entertainment|media|webtoon|works|team/i.test(n) &&
+    (/^[A-Za-z.'\-]+( [A-Za-z.'\-]+)+$/.test(n) || /^[가-힣]{2,5} [가-힣]{1,5}$/.test(n)));
 }
 
 // http(s)로 시작하는 주소만 링크로 씀 (이상한 주소가 실행되지 않게)
@@ -633,7 +639,8 @@ function parseSeries(html, kind) {
       sourceId: link.getAttribute('href').match(/productNo=(\d+)/)[1],
       title: text.replace(/\s*\((?:총\s*)?[\d,]+\s*(?:화|권)[^)]*\)\s*$/, '').replace(/\s*\[독점\]/, '').trim(),
       author: authors.join(', '),
-      cover: img ? img.getAttribute('src').replace(/\?type=.*$/, '?type=m260') : '',
+      // 19세 작품은 네이버 로그인이 있어야 표지가 보여서 "19" 대체 그림이 옴 → 표지 없음으로 (다른 플랫폼 표지를 씀)
+      cover: img && !/19over/.test(img.getAttribute('src')) ? img.getAttribute('src').replace(/\?type=.*$/, '?type=m260') : '',
       type,
       unit,
       note: TYPES[type],
@@ -689,13 +696,12 @@ function parseMrblue(html) {
     const info = (li.querySelector('.info')?.textContent || '').replace(/\s+/g, ' '); // 예: "2026.10.01 730화 연재 대원씨아이"
     const count = info.match(/[\d,]+\s*(화|권)/); // 회차 수는 버리고 단위(화/권)만 씀
     const authors = [...new Set([...li.querySelectorAll('.authorname')].map((a) => a.textContent.trim()))];
-    const img = li.querySelector('img');
     const href = link.getAttribute('href');
     return {
       sourceId: li.dataset.pid,
       title,
       author: authors.join(', '),
-      cover: img ? (img.getAttribute('data-original') || img.getAttribute('src') || '') : '',
+      cover: mrblueCover(li, category === '소설' ? 'webnovel' : 'comic'),
       type: category === '소설' ? 'webnovel' : category === '웹툰' ? 'webtoon' : 'comic',
       unit: count ? count[1] : '',
       url: href ? new URL(href, 'https://www.mrblue.com').href : '',
@@ -923,7 +929,15 @@ async function searchPlatform(more = false, fromFinder = false) {
   // (작품 찾기는 플랫폼의 장르 목록 순서(인기순)를 rank 로 기억해 둠)
   const run = async (t) => {
     const res = finder ? await FINDER_FETCH[t.source](finder.genre, t.page, finder.types) : await fetchSearch(t.source, q, t.page);
-    res.items.forEach((item, i) => { item.rank = t.page * 100 + i; });
+    res.items.forEach((item, i) => {
+      item.rank = t.page * 100 + i;
+      // 일본 만화를 화 단위로 나눠 연재하는 작품은 플랫폼이 웹툰으로 보내서, 작가 이름으로 만화로 바꿈
+      // (네이버웹툰은 일본 만화를 연재하지 않아서 제외)
+      if (item.type === 'webtoon' && !t.source.startsWith('naver') && looksJapaneseAuthor(String(item.author || '').split(/[,/]/))) {
+        item.type = 'comic';
+        if (!item.unit) item.unit = '화'; // 화 단위로 연재하는 작품이라 '권'이 아니라 '화'
+      }
+    });
     return res;
   };
   const results = await Promise.allSettled(targets.map(run));
@@ -1114,16 +1128,25 @@ async function seriesGenreList(kind, code, page) {
   return { items, hasMore: items.length >= 25 }; // 한 페이지에 25개씩
 }
 
+// 미스터블루 표지: 페이지에 있으면 그걸 쓰고 (웹툰의 가로 그림 wide.jpg 는 세로 표지로 바꿈),
+// 19세 작품처럼 페이지에 표지가 없으면 작품 번호로 표지 주소를 만듦 (소설은 ebook, 나머지는 comics 폴더)
+// TODO: 나중에 성인 인증을 넣으면 19세 작품 표지는 인증한 사람에게만 보여주기
+function mrblueCover(li, type) {
+  const img = li.querySelector('img');
+  const src = img ? (img.getAttribute('data-original') || img.getAttribute('src') || '') : '';
+  if (src) return src.replace(/\/wide\.jpg$/, '/cover_w480.jpg');
+  const pid = li.dataset.pid;
+  return /^[A-Za-z0-9_]+$/.test(pid || '')
+    ? `https://img.mrblue.com/prod_img/${type === 'webnovel' ? 'ebook' : 'comics'}/${pid}/cover_w480.jpg` : '';
+}
+
 // 미스터블루 장르 페이지에서 작품 정보를 꺼냄 (검색 결과와 모양이 달라서 따로)
-// 19세 작품(표지가 가려져 있음)은 뺌
 function parseMrblueGenre(html, type) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   return [...doc.querySelectorAll('#listBox li[data-pid]')].map((li) => {
-    if (li.querySelector('.adultmark, .adult')) return null;
     const link = li.querySelector('.tit a');
     if (!link) return null;
     const href = link.getAttribute('href');
-    const img = li.querySelector('img');
     // 작가 이름 앞의 "(원작)" 같은 표시는 뺌
     const authors = [...li.querySelectorAll('.name a[href*="/author"]')]
       .map((a) => (a.getAttribute('title') || a.textContent).replace(/^\([^)]*\)/, '').trim());
@@ -1131,7 +1154,7 @@ function parseMrblueGenre(html, type) {
       sourceId: li.dataset.pid,
       title: (link.getAttribute('title') || link.textContent).replace(/\s+/g, ' ').trim(),
       author: uniqueAuthors(authors.join(', ')),
-      cover: img ? (img.getAttribute('data-original') || img.getAttribute('src') || '') : '',
+      cover: mrblueCover(li, type),
       type,
       url: href ? new URL(href, 'https://www.mrblue.com').href : '',
       note: TYPES[type],

@@ -184,6 +184,10 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
   display: flex; align-items: center; justify-content: center;
 }
 .cover img, .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* 표지 그림이 그려지기 전(보기 방식을 바꿀 때 등)에 주황 바탕이 번쩍이지 않게 연회색으로
+   (그림을 못 받으면 img 가 지워져서 원래대로 주황 바탕 + 제목) */
+.cover:has(img), .thumb:has(img) { background: var(--surface-2); }
+.cover:has(img) .cover-fallback, .thumb:has(img) .cover-fallback { visibility: hidden; }
 .cover-fallback { color: #fff; font-weight: 800; font-size: 0.8rem; padding: 8px; text-align: center; word-break: keep-all; }
 .thumb { width: 64px; flex: none; border-radius: 6px; }
 .thumb .cover-fallback { font-size: 0.62rem; padding: 4px; }
@@ -662,9 +666,6 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 .hero-cover { position: relative; z-index: 1; width: 190px; }
 .hero-cover .cover { border-radius: 12px; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2); }
 .hero-cover .cover-fallback { font-size: 1.1rem; }
-/* 표지 그림이 그려지기 전에 주황 바탕이 비치지 않게 (그림을 못 받으면 원래 주황 표지) */
-.hero-cover .cover:has(img) { background: var(--surface-2); }
-.hero-cover .cover:has(img) .cover-fallback { visibility: hidden; }
 #detailHero:not(:empty) + #detailBody .detail-info { position: relative; z-index: 1; margin-top: -86px; }
 @media (prefers-color-scheme: dark) {
   .hero { --wash: 17, 17, 17; }
