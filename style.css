@@ -508,10 +508,9 @@ form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 /* ===== 전체 화면 창 (검색, 작품 정보, 한줄평 쓰기) ===== */
 /* 창이 열려 있는 동안 뒤 화면 고정 (top 은 app.js 가 스크롤 위치만큼 넣어 줌) */
 body.overlay-open { position: fixed; left: 0; right: 0; overflow: hidden; }
-/* 키보드가 올라와도 실제로 보이는 영역(--vv-top, --vv-height)에 맞춰서, 위쪽 바가 밀려 올라가지 않게 함 */
+/* 화면에 고정 - 키보드가 올라와도 창은 그대로 있고 키보드가 그 위에 겹쳐서 올라옴 */
 .overlay {
-  position: fixed; left: 0; right: 0; z-index: 30;
-  top: var(--vv-top, 0px); height: var(--vv-height, 100%);
+  position: fixed; inset: 0; z-index: 30;
   overflow-y: auto; overscroll-behavior: contain;
   background: var(--bg);
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
@@ -770,7 +769,8 @@ dialog button:focus { outline: none; }
 .has-review { flex: none; font-size: 0.72rem; padding: 3px 8px; border-radius: 6px; background: var(--surface-2); color: var(--muted); }
 
 /* 별점 + 한줄평 */
-.review-rating { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 0 22px; }
+/* 입력칸이 키보드에 가리지 않을 만큼 위쪽에 오도록 별점 부분 여백을 줄임 */
+.review-rating { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 0 14px; }
 #reviewInput {
   width: 100%; resize: none; font: inherit; font-size: 16px; line-height: 1.6; color: var(--text);
   padding: 14px; border: 1.5px solid var(--border); border-radius: 14px; background: var(--surface);

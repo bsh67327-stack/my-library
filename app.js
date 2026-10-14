@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 32;
+const APP_VERSION = 33;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -705,8 +705,21 @@ function parseSeries(html, kind) {
       note: TYPES[type],
       desc: (li.querySelector('.dsc')?.textContent || '').replace(/​/g, '').trim(),
       ongoing: /미완결/.test(text) ? '연재중' : /완결/.test(text) ? '완결' : '',
+      updated: dateNum(li.querySelector('.info')?.textContent), // 예: "... | 2026.09.14. | ..."
     };
   }).filter(Boolean);
+}
+
+// 플랫폼이 알려준 최근 업데이트 날짜 → 비교용 숫자 (없으면 0)
+// "2026.09.14" / "25.02.02" / "2026-10-09T22:01:05+09:00" 모양을 읽음
+function dateNum(text) {
+  const s = String(text || '');
+  const iso = Date.parse(s);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s) && !Number.isNaN(iso)) return iso;
+  const m = s.match(/(\d{4}|\d{2})\.(\d{1,2})\.(\d{1,2})/);
+  if (!m) return 0;
+  const year = m[1].length === 2 ? 2000 + Number(m[1]) : Number(m[1]);
+  return new Date(year, Number(m[2]) - 1, Number(m[3])).getTime();
 }
 
 const seriesSource = (kind) => ({
@@ -752,6 +765,7 @@ function parseMrblue(html) {
       url: href ? new URL(href, 'https://www.mrblue.com').href : '',
       note: category,
       ongoing: /완결/.test(info) ? '완결' : /연재/.test(info) ? '연재중' : '',
+      updated: dateNum(info),
     };
   }).filter(Boolean);
 }
@@ -768,6 +782,7 @@ const naverSource = (platform) => ({
     note: '',
     desc: w.synopsis || '',
     ongoing: w.finished ? '완결' : '연재중',
+    updated: dateNum(w.lastArticleServiceDate), // 예: "25.02.02"
   })),
   hasMore: (data, page) => page + 1 < (data.pageInfo?.totalPages || 0),
   // 장르와 태그는 검색 결과에 없어서 작품 정보에서 불러옴 (GENRE_로 시작하는 태그가 장르)
@@ -851,6 +866,7 @@ const SEARCH_SOURCES = {
       genre: s.sub_category || '',
       // on_issue: Y = 연재중, N = 완결 (P 등 다른 값은 뜻이 확실하지 않아서 비워 둠)
       ongoing: s.on_issue === 'Y' ? '연재중' : s.on_issue === 'N' ? '완결' : '',
+      updated: dateNum(s.last_slide_added_dt),
     })),
     // 작품 소개와 태그는 검색 결과에 없어서 작품 정보에서 불러옴
     fetchInfo: async (item) => {
@@ -919,10 +935,12 @@ function mainItem(group) {
   return [...group.items].sort((a, b) => sourceRank(a.source) - sourceRank(b.source))[0];
 }
 
-// 묶음의 표지: 카카오웹툰은 캐릭터 그림이라 다른 플랫폼 표지가 있으면 그걸 씀
+// 묶음의 표지: 가장 최근에 업데이트된 플랫폼의 표지 (날짜가 같거나 없으면 플랫폼 순서대로)
+// 검색 목록·작품 정보·서재에 담을 때 모두 이 표지 하나를 씀
+// (카카오웹툰 검색 결과는 캐릭터 그림이라, 다른 플랫폼 표지가 있으면 그걸 씀)
 function coverItem(group) {
   const withCover = [...group.items].filter((i) => i.cover)
-    .sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
+    .sort((a, b) => (b.updated || 0) - (a.updated || 0) || sourceRank(a.source) - sourceRank(b.source));
   return withCover.find((i) => i.source !== 'kakaoWebtoon') || withCover[0] || null;
 }
 
@@ -1108,7 +1126,7 @@ function openSearch(q = '') {
   } else {
     $('s-query').value = '';
     showSearchIntro();
-    $('s-query').focus();
+    $('s-query').focus({ preventScroll: true });
   }
 }
 
@@ -1174,12 +1192,14 @@ function groupAsWork(group, info = {}) {
   const sorted = [...group.items].sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
   // 작품 소개는 가장 긴 것 (카카오웹툰은 검색 결과에 짧은 소개만 있어서)
   const descs = [info.desc, ...sorted.map((i) => i.desc)].filter(Boolean);
+  // 표지는 검색 목록과 같은 것 (카카오웹툰 표지밖에 없을 때만 캐릭터 그림 대신 대표 이미지로 바꿈)
+  const useKwCover = info.cover && (!cover || cover.source === 'kakaoWebtoon');
   return {
     title: main.title,
     author: main.author || '',
     type: main.type,
-    cover: info.cover || cover?.cover || '',
-    coverSource: info.cover ? '카카오웹툰' : cover ? SEARCH_SOURCES[cover.source].platform : '',
+    cover: useKwCover ? info.cover : cover?.cover || '',
+    coverSource: useKwCover ? '카카오웹툰' : cover ? SEARCH_SOURCES[cover.source].platform : '',
     platform: [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', '),
     genre: info.genre || sorted.find((i) => i.genre)?.genre || '',
     ongoing: mergeOngoing([...sorted.map((i) => i.ongoing), info.ongoing]), // 연재중 / 완결
@@ -1647,7 +1667,8 @@ function lockPage(lock) {
 }
 
 // 키보드가 올라오면 화면에 실제로 보이는 영역(visualViewport)이 줄어듦
-// → 그 크기와 위치를 CSS 변수로 넘겨서, 전체 화면 창과 아래에서 올라오는 창을 키보드 위 영역에 맞춤
+// → 아래에서 올라오는 창(작품 입력·닉네임 등)은 그 크기를 CSS 변수로 받아서 키보드 바로 위에 붙음
+// (전체 화면 창은 고정이라 이 값을 쓰지 않음 - 키보드가 그 위에 겹쳐서 올라옴)
 function syncViewport() {
   const vv = window.visualViewport;
   if (!vv) return;
@@ -1659,6 +1680,22 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', syncViewport);
   window.visualViewport.addEventListener('scroll', syncViewport);
   syncViewport();
+}
+
+// 전체 화면 창의 입력칸을 누를 때, 아이폰이 입력칸을 보이게 하려고 화면을 밀어 올리지 않게 함
+// (터치를 직접 받아서 "화면을 움직이지 말고" 입력칸에 커서만 넣음)
+document.addEventListener('touchend', (e) => {
+  const field = e.target.closest('.overlay textarea, .overlay input[type="search"]');
+  if (!field || document.activeElement === field) return; // 이미 쓰는 중이면 커서 옮기기 등은 그대로
+  e.preventDefault();
+  field.focus({ preventScroll: true });
+}, { passive: false });
+
+// 그래도 밀려 올라갔으면 (오래된 아이폰 등) 바로 제자리로
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('scroll', () => {
+    if (overlayStack.length && window.visualViewport.offsetTop > 0) window.scrollTo(0, 0);
+  });
 }
 
 // 아이폰은 user-scalable=no 를 무시하고 두 손가락 확대를 허용해서, 확대 동작 자체를 막음
