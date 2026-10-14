@@ -3,77 +3,134 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>내 서재</title>
-  <meta name="theme-color" content="#6c5ce7">
+  <title>툰앤소</title>
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <!-- 아이폰 홈 화면용 설정 -->
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="내 서재">
+  <meta name="apple-mobile-web-app-title" content="툰앤소">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
-  <link rel="stylesheet" href="style.css?v=15">
+  <!-- 글꼴: Pretendard -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
-  <!-- ===== 상단: 제목, 통계, 검색/필터 ===== -->
-  <header class="top">
-    <div class="top-row">
-      <h1>📚 내 서재</h1>
-      <div class="top-actions">
-        <button id="exportBtn" class="ghost" title="기록을 파일로 저장">백업</button>
-        <button id="importBtn" class="ghost" title="백업 파일 불러오기">복원</button>
-        <input type="file" id="importFile" accept="application/json,.json" hidden>
-      </div>
-    </div>
-    <p id="stats" class="stats"></p>
-
-    <!-- 서재 / 캘린더 화면 전환 -->
-    <div class="view-tabs" id="viewTabs">
-      <button data-view="library" class="active">📚 서재</button>
-      <button data-view="calendar">📅 캘린더</button>
-    </div>
-
-    <div class="toolbar" id="toolbar">
-      <input type="search" id="search" placeholder="제목 · 작가 · 한줄평 검색">
-      <div class="tabs" id="typeTabs">
-        <button data-type="all" class="active">전체</button>
-        <button data-type="webtoon">웹툰</button>
-        <button data-type="webnovel">웹소설</button>
-        <button data-type="comic">만화책</button>
-        <button data-type="manga">일본만화</button>
-      </div>
-      <div class="selects">
-        <select id="statusFilter" aria-label="상태 필터">
-          <option value="all">모든 상태</option>
-          <option value="reading">보는 중</option>
-          <option value="done">완독</option>
-          <option value="paused">보류</option>
-          <option value="dropped">하차</option>
-        </select>
-        <select id="sortSelect" aria-label="정렬">
-          <option value="updated">최근 수정순</option>
-          <option value="created">최근 등록순</option>
-          <option value="rating">평점 높은순</option>
-          <option value="title">제목순</option>
-        </select>
-      </div>
-    </div>
-  </header>
-
-  <!-- ===== 서재 (작품 카드 목록) ===== -->
   <main>
-    <section id="libraryView">
-      <div id="grid" class="grid"></div>
+    <!-- ===== 홈: 검색창, 이번 달 기록, 보는 중, 최근 기록 ===== -->
+    <section id="homeView">
+      <header class="page-head">
+        <h1><img src="icon.svg" class="logo" alt="">툰앤소<small id="appVersion" class="version"></small></h1>
+        <!-- 더 보기 메뉴 (백업 / 복원) -->
+        <details class="menu" id="menu">
+          <summary aria-label="메뉴">
+            <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+          </summary>
+          <div class="menu-pop">
+            <button id="exportBtn" type="button">백업 파일 저장</button>
+            <button id="importBtn" type="button">백업 파일 불러오기</button>
+          </div>
+        </details>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </header>
+
+      <!-- 누르면 작품 추가 창이 열리고 플랫폼 검색을 바로 할 수 있음 -->
+      <button type="button" id="homeSearch" class="search-fake">작품을 검색해서 서재에 추가해 보세요</button>
+
+      <div id="stats" class="stats"></div>
+
+      <div class="sec-head">
+        <h2>보는 중 <span id="readingCount" class="count"></span></h2>
+        <button type="button" class="more" data-go="reading">전체 보기</button>
+      </div>
+      <div id="readingRow" class="carousel"></div>
+
+      <!-- 추천: 내 서재 기록으로 골라 줌 (밖으로 요청을 보내지 않음) -->
+      <div id="recSection">
+        <div class="sec-head">
+          <h2>이런 건 어때요?</h2>
+        </div>
+        <div id="recRow" class="carousel"></div>
+      </div>
+
+      <div class="sec-head">
+        <h2>최근 기록</h2>
+        <button type="button" class="more" data-go="library">서재로</button>
+      </div>
+      <div id="recentList" class="list"></div>
+    </section>
+
+    <!-- ===== 서재: 내 작품 검색/필터 + 쌓아보기 / 리스트 ===== -->
+    <section id="libraryView" hidden>
+      <header class="page-head">
+        <h1>서재 <span id="libCount" class="count"></span></h1>
+      </header>
+
+      <!-- 검색 / 필터 (스크롤해도 화면 위에 붙어 있음) -->
+      <div class="toolbar" id="toolbar">
+        <input type="search" id="search" placeholder="서재에서 제목 · 작가 · 한줄평 검색">
+        <div class="tabs" id="typeTabs">
+          <button data-type="all" class="active">전체</button>
+          <button data-type="webtoon">웹툰</button>
+          <button data-type="webnovel">웹소설</button>
+          <button data-type="comic">만화책</button>
+          <button data-type="manga">일본만화</button>
+        </div>
+        <div class="filter-row">
+          <select id="statusFilter" aria-label="상태 필터">
+            <option value="all">모든 상태</option>
+            <option value="reading">보는 중</option>
+            <option value="done">완독</option>
+            <option value="paused">보류</option>
+            <option value="dropped">하차</option>
+          </select>
+          <select id="sortSelect" aria-label="정렬">
+            <option value="updated">최근 수정순</option>
+            <option value="created">최근 등록순</option>
+            <option value="rating">평점 높은순</option>
+            <option value="title">제목순</option>
+          </select>
+          <span class="spacer"></span>
+          <!-- 쌓아보기 / 리스트 전환 -->
+          <div class="layout-toggle" id="layoutToggle">
+            <button type="button" data-layout="stack" aria-label="쌓아보기" title="쌓아보기">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="15" width="16" height="5" rx="1.5"/><rect x="6" y="9.5" width="13" height="5" rx="1.5"/><rect x="5" y="4" width="14" height="5" rx="1.5"/></svg>
+            </button>
+            <button type="button" data-layout="list" aria-label="리스트" title="리스트">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="5" height="6" rx="1"/><rect x="3" y="14" width="5" height="6" rx="1"/><path d="M11 6h10M11 9h6M11 16h10M11 19h6"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="grid"></div>
       <p id="empty" class="empty" hidden></p>
+    </section>
+
+    <!-- ===== 피드: 지금은 내 한줄평만 (다른 사람 한줄평은 계정·서버를 만든 뒤에) ===== -->
+    <section id="feedView" hidden>
+      <header class="page-head">
+        <h1>피드</h1>
+      </header>
+      <div class="notice">
+        <b>다른 독자들의 한줄평이 곧 여기에 모여요</b>
+        <span>지금은 내가 남긴 한줄평만 보여요.</span>
+      </div>
+      <div id="feedList" class="feed"></div>
     </section>
 
     <!-- ===== 캘린더 (작품을 추가한 날짜에 표지 표시) ===== -->
     <section id="calendarView" hidden>
+      <header class="page-head">
+        <h1>캘린더</h1>
+      </header>
       <div class="cal-head">
-        <button type="button" id="calPrev" class="ghost" aria-label="이전 달">‹</button>
+        <button type="button" id="calPrev" class="icon-btn" aria-label="이전 달">‹</button>
         <h2 id="calTitle"></h2>
-        <button type="button" id="calNext" class="ghost" aria-label="다음 달">›</button>
+        <button type="button" id="calNext" class="icon-btn" aria-label="다음 달">›</button>
       </div>
       <p id="calSummary" class="cal-summary"></p>
       <div class="cal-week">
@@ -85,6 +142,26 @@
   </main>
 
   <button id="addBtn" class="fab" aria-label="작품 추가">＋</button>
+
+  <!-- ===== 아래 탭바: 홈 / 서재 / 피드 / 캘린더 ===== -->
+  <nav class="tabbar" id="viewTabs">
+    <button data-view="home" class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/></svg>
+      <span>홈</span>
+    </button>
+    <button data-view="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/><path d="m16.5 5.2 3.6-.9 3 15.5-3.6.9z" transform="translate(-2 0)"/></svg>
+      <span>서재</span>
+    </button>
+    <button data-view="feed">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v10a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17h0A1.5 1.5 0 0 1 4 15.5z"/><path d="M8 9h8M8 12.5h5" stroke-linecap="round"/></svg>
+      <span>피드</span>
+    </button>
+    <button data-view="calendar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+      <span>캘린더</span>
+    </button>
+  </nav>
 
   <!-- ===== 작품 추가/수정 창 ===== -->
   <dialog id="editor">
@@ -201,6 +278,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=18"></script>
 </body>
 </html>

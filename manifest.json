@@ -1,11 +1,11 @@
 {
-  "name": "내 서재",
-  "short_name": "내 서재",
+  "name": "툰앤소",
+  "short_name": "툰앤소",
   "description": "웹툰 · 웹소설 · 만화책 기록장",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#f6f5fb",
-  "theme_color": "#6c5ce7",
+  "background_color": "#fbf9f7",
+  "theme_color": "#fbf9f7",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }

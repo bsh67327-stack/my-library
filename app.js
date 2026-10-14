@@ -1,19 +1,24 @@
 // =====================================================
-// 내 서재 - 웹툰/웹소설/만화책 기록 앱
+// 툰앤소 - 웹툰/웹소설/만화책 기록 앱
 // =====================================================
 
 // ----- 1. 기본 설정 -----
 const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', manga: '일본만화' };
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
-// 앱 버전 (화면 맨 위 통계 줄 끝에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 15;
+// 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
+const APP_VERSION = 18;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
 
-// 화면 상태: 서재/캘린더 중 어떤 화면인지, 어떤 필터/정렬을 보고 있는지
-const view = { mode: 'library', type: 'all', status: 'all', sort: 'updated', query: '' };
+// 화면 상태: 홈/서재/캘린더 중 어떤 화면인지, 어떤 필터/정렬을 보고 있는지
+// layout: 서재를 쌓아보기(stack)로 볼지 리스트(list)로 볼지 (마지막에 고른 것을 기억)
+const view = { mode: 'home', layout: savedLayout(), type: 'all', status: 'all', sort: 'updated', query: '' };
+
+function savedLayout() {
+  try { return localStorage.getItem('layout') === 'list' ? 'list' : 'stack'; } catch { return 'stack'; }
+}
 
 // 캘린더 상태: 보고 있는 연도/달(0=1월), 선택한 날짜('YYYY-MM-DD')
 const now = new Date();
@@ -152,8 +157,14 @@ function render() {
   };
   list.sort(sorters[view.sort]);
 
-  // (3) 카드 만들기
-  $('grid').innerHTML = list.map(cardHTML).join('');
+  // (3) 쌓아보기 / 리스트로 그리기
+  $('libCount').textContent = list.length || '';
+  $('grid').className = `layout-${view.layout}`;
+  $('grid').innerHTML = view.layout === 'stack'
+    ? (list.length ? `<div class="stack">${list.map(spineHTML).join('')}</div>` : '')
+    : list.map(rowHTML).join('');
+  document.querySelectorAll('#layoutToggle button')
+    .forEach((b) => b.classList.toggle('active', b.dataset.layout === view.layout));
 
   // (4) 비어 있을 때 안내 문구
   const empty = $('empty');
@@ -163,45 +174,85 @@ function render() {
     : '조건에 맞는 작품이 없어요.';
 
   renderStats();
+  renderHome();
+  renderFeed();
   if (view.mode === 'calendar') renderCalendar();
 }
 
-// 작품 카드 하나 (서재와 캘린더에서 같이 씀)
-function cardHTML(w) {
+// 표지 (사진이 없거나 못 불러오면 제목 글자로 대신)
+function coverHTML(w, cls) {
   return `
-    <article class="card" data-id="${esc(w.id)}">
-      <div class="cover">
-        <span class="cover-fallback">${esc(w.title)}</span>
-        ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
-        <div class="badges">
-          <span class="badge">${TYPES[w.type]}</span>
-          ${platformBadge(w.platform)}
+    <div class="${cls}">
+      <span class="cover-fallback">${esc(w.title)}</span>
+      ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+    </div>`;
+}
+
+// 리스트 한 줄 (서재 리스트, 홈 최근 기록, 캘린더에서 같이 씀)
+function rowHTML(w) {
+  return `
+    <article class="card item" data-id="${esc(w.id)}">
+      ${coverHTML(w, 'thumb')}
+      <div class="item-body">
+        <p class="kicker">${esc([TYPES[w.type], w.platform].filter(Boolean).join(' · '))}</p>
+        <h3>${esc(w.title)}</h3>
+        ${w.author ? `<p class="author">${esc(w.author)}</p>` : ''}
+        <div class="item-meta">
+          <span class="stars small">${starsHTML(w.rating)}</span>
+          ${w.rating ? `<b class="rating-num">${w.rating.toFixed(1)}</b>` : ''}
+          <span class="status status-${w.status}">${STATUSES[w.status]}</span>
         </div>
-      </div>
-      <div class="info">
-        <div class="stars small">${starsHTML(w.rating)}</div>
-        <h3 title="${esc(w.title)}">${esc(w.title)}</h3>
-        <p class="author">${esc([w.author, w.platform].filter(Boolean).join(' · ') || ' ')}</p>
-        <span class="status status-${w.status}">${STATUSES[w.status]}</span>
-        ${linksHTML(w)}
         ${progressHTML(w)}
-        ${w.review ? `<p class="review">“${esc(w.review)}”</p>` : ''}
+        ${w.review ? `<p class="review">${esc(w.review)}</p>` : ''}
+        ${linksHTML(w)}
       </div>
     </article>`;
 }
 
-// 표지 왼쪽 위 플랫폼 표시 (플랫폼 이름에 들어간 글자로 판단)
-const PLATFORM_BADGES = [
-  { match: /네이버|naver/i, label: '네이버', cls: 'naver' },
-  { match: /카카오|kakao/i, label: '카카오', cls: 'kakao' },
-  { match: /리디|ridi/i, label: '리디', cls: 'ridi' },
-  { match: /레진|lezhin/i, label: '레진', cls: 'lezhin' },
-  { match: /미스터블루|mrblue/i, label: '미블', cls: 'mrblue' },
-];
+// 쌓아보기: 작품을 책등처럼 쌓음
+// 많이 본 작품일수록 두껍게, 폭·위치·기울기는 작품마다 조금씩 다르게 (작품 id로 정해서 매번 같음)
+const SPINE_COLORS = ['#e07a5f', '#3d405b', '#81b29a', '#b56576', '#355070', '#6d597a', '#457b9d', '#2a9d8f', '#bc6c25', '#588157'];
 
-function platformBadge(platform) {
-  const found = PLATFORM_BADGES.find((p) => p.match.test(platform || ''));
-  return found ? `<span class="badge pf-${found.cls}">${found.label}</span>` : '';
+function hashOf(text) {
+  let h = 0;
+  for (const c of String(text)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return h;
+}
+
+function spineHTML(w) {
+  const h = hashOf(w.id);
+  const thick = 36 + Math.min(22, Math.round(Math.log2((w.progress || 0) + 1) * 2.2));
+  const width = 74 + (h % 23);              // 74~96%
+  const shift = ((h >> 5) % 17) - 8;        // 왼쪽/오른쪽으로 -8~8px
+  const tilt = (((h >> 9) % 9) - 4) / 10;   // -0.4~0.4도
+  return `
+    <article class="card spine" data-id="${esc(w.id)}"
+      style="--h:${thick}px;--w:${width}%;--x:${shift}px;--r:${tilt}deg;--c:${SPINE_COLORS[h % SPINE_COLORS.length]}">
+      ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+      <span class="spine-type">${TYPES[w.type]}</span>
+      <span class="spine-title">${esc(w.title)}</span>
+      ${w.rating ? `<span class="spine-rating">★ ${w.rating.toFixed(1)}</span>` : ''}
+    </article>`;
+}
+
+// 홈 "보는 중" 가로 목록의 작품 하나
+function miniHTML(w) {
+  const unit = unitOf(w.type, w.unit);
+  const seen = w.progress || 0;
+  const left = w.latest ? w.latest - seen : 0;
+  return `
+    <article class="card mini" data-id="${esc(w.id)}">
+      <div class="mini-cover">
+        ${coverHTML(w, 'cover')}
+        ${left > 0 ? `<span class="left-badge">안 본 ${left}${unit}</span>` : ''}
+      </div>
+      <h3>${esc(w.title)}</h3>
+      ${w.latest ? `<span class="bar"><i style="width:${Math.min(100, (seen / w.latest) * 100)}%"></i></span>` : ''}
+      <div class="mini-foot">
+        <span>${seen}${w.latest ? ` / ${w.latest}` : ''}${unit}</span>
+        <button type="button" class="plus-btn" data-id="${esc(w.id)}">+1</button>
+      </div>
+    </article>`;
 }
 
 // 카드의 "네이버웹툰 ↗ 카카오페이지 ↗" 링크 (누르면 원래 플랫폼으로 이동)
@@ -212,7 +263,7 @@ function linksHTML(w) {
     `<a class="go-link" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.name)} ↗</a>`).join('')}</div>`;
 }
 
-// 카드의 "📖 32 / 189화" 줄과 "안 본 157화" 표시 (최신 회차는 직접 입력한 값)
+// 리스트의 진행 막대 + "32 / 189화 · 안 본 157화" + +1 버튼 (최신 회차는 직접 입력한 값)
 function progressHTML(w) {
   if (!w.progress && !w.latest && w.status !== 'reading') return '';
   const unit = unitOf(w.type, w.unit);
@@ -220,18 +271,121 @@ function progressHTML(w) {
   const left = w.latest ? w.latest - seen : 0;
   return `
     <div class="progress">
-      <span>📖 ${seen}${w.latest ? ` / ${w.latest}` : ''}${unit}</span>
+      ${w.latest ? `<span class="bar"><i style="width:${Math.min(100, (seen / w.latest) * 100)}%"></i></span>` : ''}
+      <span class="progress-text">${seen}${w.latest ? ` / ${w.latest}` : ''}${unit}${w.status === 'reading' && left > 0 ? ` <em>· 안 본 ${left}${unit}</em>` : ''}</span>
       ${w.status === 'reading' ? `<button type="button" class="plus-btn" data-id="${esc(w.id)}">+1</button>` : ''}
-    </div>
-    ${w.status === 'reading' && left > 0 ? `<span class="new-badge">안 본 ${left}${unit}</span>` : ''}`;
+    </div>`;
 }
 
 function renderStats() {
-  const done = works.filter((w) => w.status === 'done').length;
+  const count = (status) => works.filter((w) => w.status === status).length;
   const rated = works.filter((w) => w.rating > 0);
   const avg = rated.length ? (rated.reduce((s, w) => s + w.rating, 0) / rated.length).toFixed(1) : '-';
-  $('stats').innerHTML = `전체 ${works.length}작품 · 완독 ${done} · 평균 평점 ★ ${avg}`
-    + ` <small class="version">v${APP_VERSION}</small>`;
+  const tiles = [['전체', works.length], ['보는 중', count('reading')], ['완독', count('done')], ['평균 평점', avg]];
+  $('stats').innerHTML = tiles.map(([label, value]) => `<div class="stat"><b>${value}</b><span>${label}</span></div>`).join('');
+  $('appVersion').textContent = `v${APP_VERSION}`;
+}
+
+// 홈: 보는 중인 작품(가로 목록) + 추천 + 최근에 기록한 작품 5개
+function renderHome() {
+  const byUpdated = [...works].sort((a, b) => b.updatedAt - a.updatedAt);
+  const reading = byUpdated.filter((w) => w.status === 'reading');
+  $('readingCount').textContent = reading.length || '';
+  $('readingRow').innerHTML = reading.length
+    ? reading.map(miniHTML).join('')
+    : '<p class="hint">보는 중인 작품이 없어요.</p>';
+  const recs = recommendations();
+  $('recSection').hidden = recs.length === 0;
+  $('recRow').innerHTML = recs.map(recHTML).join('');
+  $('recentList').innerHTML = works.length
+    ? byUpdated.slice(0, 5).map(rowHTML).join('')
+    : '<p class="hint">아직 기록한 작품이 없어요.<br>위 검색창에서 첫 작품을 추가해 보세요!</p>';
+}
+
+// 홈 "이런 건 어때요?": 내 서재 기록만으로 고른 추천 (밖으로 요청을 보내지 않음)
+const DAY = 24 * 60 * 60 * 1000;
+
+function recommendations() {
+  const recs = [];
+  const oldestFirst = (a, b) => a.updatedAt - b.updatedAt;
+
+  // (1) 평점을 높게 준 작품의 작가 → 누르면 그 작가 이름으로 플랫폼 검색 (작가당 한 번, 최대 3명)
+  const authors = new Set();
+  works.filter((w) => w.rating >= 4.5 && w.author)
+    .sort((a, b) => b.rating - a.rating || b.updatedAt - a.updatedAt)
+    .forEach((w) => {
+      const name = w.author.split(/[,/·]/)[0].trim();
+      if (!name || authors.has(name) || authors.size >= 3) return;
+      authors.add(name);
+      recs.push({ w, reason: `재밌게 본 「${w.title}」 작가`, author: name });
+    });
+
+  // (2) 보류해 둔 작품, (3) 2주 넘게 기록이 없는 보는 중 작품, (4) 한 달 넘게 안 연 인생작(4.5점 이상 완독)
+  const picks = [
+    [(w) => w.status === 'paused', '보류했던 작품, 다시 볼까요?', 3],
+    [(w) => w.status === 'reading' && Date.now() - w.updatedAt > 14 * DAY, '요즘 안 보셨어요', 2],
+    [(w) => w.status === 'done' && w.rating >= 4.5 && Date.now() - w.updatedAt > 30 * DAY, '인생작 다시 보기', 2],
+  ];
+  const used = new Set();
+  for (const [match, reason, max] of picks) {
+    works.filter((w) => match(w) && !used.has(w.id)).sort(oldestFirst).slice(0, max).forEach((w) => {
+      used.add(w.id);
+      recs.push({ w, reason });
+    });
+  }
+  return recs;
+}
+
+function recHTML({ w, reason, author }) {
+  const target = author ? `class="rec" data-author="${esc(author)}"` : `class="card rec" data-id="${esc(w.id)}"`;
+  return `
+    <article ${target}>
+      <div class="mini-cover">
+        ${coverHTML(w, 'cover')}
+        ${author ? '<span class="rec-search">찾아보기</span>' : ''}
+      </div>
+      <p class="rec-reason">${esc(reason)}</p>
+      <h3>${esc(author ? `${author} 작가의 다른 작품` : w.title)}</h3>
+    </article>`;
+}
+
+// 피드: 한줄평을 남긴 작품을 최근 순으로 (나중에 다른 사람 한줄평도 이 모양으로)
+function renderFeed() {
+  const posts = works.filter((w) => w.review).sort((a, b) => b.updatedAt - a.updatedAt);
+  $('feedList').innerHTML = posts.length
+    ? posts.map(feedHTML).join('')
+    : '<p class="hint">작품에 한줄평을 남기면 여기에 쌓여요.</p>';
+}
+
+function feedHTML(w) {
+  return `
+    <article class="card post" data-id="${esc(w.id)}">
+      <div class="post-head">
+        <span class="avatar"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="9" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6z"/></svg></span>
+        <b>나</b>
+        <span class="post-time">${timeAgo(w.updatedAt)}</span>
+        <span class="status status-${w.status}">${STATUSES[w.status]}</span>
+      </div>
+      <p class="post-text">${esc(w.review)}</p>
+      <div class="post-work">
+        ${coverHTML(w, 'thumb')}
+        <div class="item-body">
+          <p class="kicker">${esc([TYPES[w.type], w.platform].filter(Boolean).join(' · '))}</p>
+          <h3>${esc(w.title)}</h3>
+          <span class="stars small">${starsHTML(w.rating)}</span>
+        </div>
+      </div>
+    </article>`;
+}
+
+// "방금 / 5분 전 / 3시간 전 / 2일 전 / 2026. 9. 1."
+function timeAgo(time) {
+  const min = Math.floor((Date.now() - time) / 60000);
+  if (min < 1) return '방금';
+  if (min < 60) return `${min}분 전`;
+  if (min < 60 * 24) return `${Math.floor(min / 60)}시간 전`;
+  if (min < 60 * 24 * 7) return `${Math.floor(min / 60 / 24)}일 전`;
+  return new Date(time).toLocaleDateString('ko-KR');
 }
 
 
@@ -267,19 +421,22 @@ function renderCalendar() {
     const first = list[0];
     const classes = ['cal-cell', list.length && 'has', key === today && 'today', key === cal.selected && 'selected']
       .filter(Boolean).join(' ');
+    // 날짜 아래에 그날 추가한 작품 표지 (여러 개면 뒤에 한 장 더 겹쳐 보이고 +N 표시)
     html += `
       <button type="button" class="${classes}" data-date="${key}">
         <span class="cal-day">${d}</span>
         ${first ? `
-          <span class="cal-fallback">${esc(first.title)}</span>
-          ${first.cover ? `<img src="${esc(first.cover)}" alt="${esc(first.title)}" loading="lazy" onerror="this.remove()">` : ''}` : ''}
-        ${list.length > 1 ? `<span class="cal-more">+${list.length - 1}</span>` : ''}
+          <span class="cal-cover${list.length > 1 ? ' multi' : ''}">
+            <span class="cal-fallback">${esc(first.title)}</span>
+            ${first.cover ? `<img src="${esc(first.cover)}" alt="${esc(first.title)}" loading="lazy" onerror="this.remove()">` : ''}
+            ${list.length > 1 ? `<span class="cal-more">+${list.length - 1}</span>` : ''}
+          </span>` : ''}
       </button>`;
   }
   $('calGrid').innerHTML = html;
-  $('calSummary').textContent = monthCount
-    ? `이번 달에 추가한 작품 ${monthCount}개`
-    : '이번 달에 추가한 작품이 없어요';
+  $('calSummary').innerHTML = monthCount
+    ? `이번 달에 <b>${monthCount}작품</b>을 기록했어요`
+    : '이번 달에 기록한 작품이 없어요';
 
   // 선택한 날짜의 작품 목록
   const picked = cal.selected && byDay[cal.selected];
@@ -287,7 +444,7 @@ function renderCalendar() {
     const [, m, d] = cal.selected.split('-').map(Number);
     $('calDayList').innerHTML = `
       <h3 class="cal-day-title">${m}월 ${d}일에 추가한 작품 ${picked.length}개</h3>
-      <div class="grid">${picked.map(cardHTML).join('')}</div>`;
+      <div class="list">${picked.map(rowHTML).join('')}</div>`;
   } else {
     $('calDayList').innerHTML = '';
   }
@@ -301,13 +458,14 @@ function moveMonth(diff) {
   renderCalendar();
 }
 
-// 서재 ↔ 캘린더 전환
+// 홈 / 서재 / 피드 / 캘린더 전환 (아래 탭바)
 function setViewMode(mode) {
   view.mode = mode;
   document.querySelectorAll('#viewTabs button')
     .forEach((b) => b.classList.toggle('active', b.dataset.view === mode));
+  $('homeView').hidden = mode !== 'home';
   $('libraryView').hidden = mode !== 'library';
-  $('toolbar').hidden = mode !== 'library';
+  $('feedView').hidden = mode !== 'feed';
   $('calendarView').hidden = mode !== 'calendar';
   if (mode === 'calendar') {
     // 오늘 추가한 작품이 있으면 오늘을 선택해서 보여줌
@@ -803,7 +961,7 @@ function exportBackup() {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `내서재-백업-${new Date().toLocaleDateString('sv-SE')}.json`;
+  a.download = `툰앤소-백업-${new Date().toLocaleDateString('sv-SE')}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -851,8 +1009,45 @@ function bindEvents() {
   };
   $('grid').addEventListener('click', onCardClick);
   $('calDayList').addEventListener('click', onCardClick);
+  $('readingRow').addEventListener('click', onCardClick);
+  $('recentList').addEventListener('click', onCardClick);
+  $('feedList').addEventListener('click', onCardClick);
 
-  // 서재 / 캘린더 전환
+  // 추천: 작가 카드는 그 작가 이름으로 플랫폼 검색, 나머지는 수정 창
+  $('recRow').addEventListener('click', (e) => {
+    const rec = e.target.closest('[data-author]');
+    if (!rec) { onCardClick(e); return; }
+    openEditor(null);
+    $('s-query').value = rec.dataset.author;
+    searchPlatform();
+  });
+
+  // 홈 검색창: 작품 추가 창을 열고 플랫폼 검색부터
+  $('homeSearch').addEventListener('click', () => openEditor(null));
+
+  // 홈 "전체 보기" / "서재로": 서재 화면으로 이동 (보는 중이면 상태 필터도 같이)
+  document.querySelectorAll('.sec-head .more').forEach((btn) => btn.addEventListener('click', () => {
+    view.status = btn.dataset.go === 'reading' ? 'reading' : 'all';
+    $('statusFilter').value = view.status;
+    render();
+    setViewMode('library');
+  }));
+
+  // 쌓아보기 / 리스트 전환
+  $('layoutToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    view.layout = btn.dataset.layout;
+    try { localStorage.setItem('layout', view.layout); } catch { /* 저장 못 해도 지금 화면은 바뀜 */ }
+    render();
+  });
+
+  // 메뉴 바깥을 누르면 메뉴 닫기
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#menu')) $('menu').open = false;
+  });
+
+  // 홈 / 서재 / 캘린더 전환
   $('viewTabs').addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (btn) setViewMode(btn.dataset.view);
@@ -937,8 +1132,8 @@ function bindEvents() {
   });
 
   // 백업 / 복원
-  $('exportBtn').addEventListener('click', exportBackup);
-  $('importBtn').addEventListener('click', () => $('importFile').click());
+  $('exportBtn').addEventListener('click', () => { $('menu').open = false; exportBackup(); });
+  $('importBtn').addEventListener('click', () => { $('menu').open = false; $('importFile').click(); });
   $('importFile').addEventListener('change', (e) => {
     if (e.target.files[0]) importBackup(e.target.files[0]);
     e.target.value = '';
