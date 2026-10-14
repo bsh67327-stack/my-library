@@ -592,13 +592,15 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 /* ===== 작품 정보 화면 ===== */
 .detail-top { position: absolute; left: 0; right: 0; background: none; }
 .detail-top .back-btn, .detail-top .text-btn { color: var(--text); }
-/* 위쪽: 밝게 흐린 표지 배경 (아래로 갈수록 바탕색에 녹아듦) + 가운데 큰 표지 */
+/* 위쪽: 밝게 흐린 표지 배경 + 가운데 큰 표지
+   배경은 제목 아래까지 이어지면서 바탕색에 녹아듦 (제목 부분이 배경 위로 올라옴) */
 .hero {
   --wash: 255, 255, 255;
+  --under: 110px; /* 배경이 제목 쪽으로 이어지는 길이 */
   position: relative; overflow: hidden;
   display: flex; justify-content: center;
-  padding: calc(64px + env(safe-area-inset-top)) 0 28px;
-  background: var(--accent-soft);
+  padding: calc(64px + env(safe-area-inset-top)) 0 var(--under);
+  background: var(--bg);
 }
 .hero-bg {
   position: absolute; inset: -40px; width: calc(100% + 80px); height: calc(100% + 80px);
@@ -606,16 +608,20 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 }
 .hero::after {
   content: ""; position: absolute; inset: 0;
-  background: linear-gradient(rgba(var(--wash), 0.45), rgba(var(--wash), 0.6) 55%, var(--bg));
+  background: linear-gradient(rgba(var(--wash), 0.4), rgba(var(--wash), 0.55) 45%, rgba(var(--wash), 0.85) 75%, var(--bg));
 }
 .hero-cover { position: relative; z-index: 1; width: 190px; }
 .hero-cover .cover { border-radius: 12px; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2); }
 .hero-cover .cover-fallback { font-size: 1.1rem; }
-/* 오른쪽 아래: 표지 출처 */
+/* 표지 그림이 그려지기 전에 주황 바탕이 비치지 않게 (그림을 못 받으면 원래 주황 표지) */
+.hero-cover .cover:has(img) { background: var(--surface-2); }
+.hero-cover .cover:has(img) .cover-fallback { visibility: hidden; }
+/* 표지 오른쪽 아래: 표지 출처 */
 .cover-source {
-  position: absolute; z-index: 1; right: 14px; bottom: 8px;
+  position: absolute; z-index: 1; right: 14px; bottom: calc(var(--under) - 22px);
   font-size: 0.66rem; color: var(--muted);
 }
+#detailHero:not(:empty) + #detailBody .detail-info { position: relative; z-index: 1; margin-top: -86px; }
 @media (prefers-color-scheme: dark) {
   .hero { --wash: 17, 17, 17; }
   .hero-cover .cover { box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); }
@@ -629,7 +635,7 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .detail-info { padding: 20px 20px 4px; text-align: center; }
-.detail-title { margin-top: 4px; font-size: 1.4rem; font-weight: 800; line-height: 1.3; word-break: keep-all; }
+.detail-title { margin-top: 4px; font-size: 1.2rem; font-weight: 800; line-height: 1.3; word-break: keep-all; }
 .detail-author { margin-top: 4px; font-size: 0.9rem; color: var(--sub); }
 .detail-rating { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 1.05rem; }
 .detail-sec { margin: 22px 20px 0; padding-top: 22px; border-top: 1px solid var(--border); }

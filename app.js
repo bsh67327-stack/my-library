@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -1257,7 +1257,8 @@ async function loadGroupInfo(state) {
   const targets = [...new Set([main, kw].filter(Boolean))];
   if (!targets.length) return;
 
-  // 불러오는 동안은 흰 화면에 로딩 표시만 (너무 오래 걸리면 8초 뒤 있는 정보로 보여줌)
+  // 불러오는 동안은 흰 화면에 로딩 표시만 - 작품 정보와 표지 그림까지 다 받은 뒤에 화면을 보여줌
+  // (너무 오래 걸리면 8초 뒤 있는 것만으로 보여줌)
   state.loading = true;
   renderDetail();
   const tooLong = new Promise((resolve) => setTimeout(() => resolve(null), 8000));
@@ -1266,9 +1267,19 @@ async function loadGroupInfo(state) {
     tooLong,
   ]);
   if (detailState !== state) return; // 그사이 화면을 닫았으면 무시
-  state.loading = false;
   state.info = mergeInfo((results || []).map((r) => (r.status === 'fulfilled' ? r.value : null)));
+  if (results) await Promise.race([preloadImage(groupAsWork(state.group, state.info).cover), tooLong]);
+  if (detailState !== state) return;
+  state.loading = false;
   renderDetail();
+}
+
+// 그림을 미리 받아 둠 (실패해도 그냥 넘어감)
+function preloadImage(src) {
+  if (!src) return Promise.resolve();
+  const img = new Image();
+  img.src = src;
+  return img.decode().catch(() => {});
 }
 
 // 내 서재 작품에 장르·태그·연재 상태·소개가 비어 있으면 (예전에 담은 작품) 한 번 불러와서 채워 넣음
@@ -1326,7 +1337,7 @@ function heroHTML(w) {
   return `
     <div class="hero">
       ${w.cover ? `<img class="hero-bg" src="${esc(w.cover)}" alt="" onerror="this.remove()">` : ''}
-      <div class="hero-cover">${coverHTML(w, 'cover')}</div>
+      <div class="hero-cover">${coverHTML(w, 'cover').replace(' loading="lazy"', '')}</div>
       ${source ? `<span class="cover-source">이미지 출처 · ${esc(source)}</span>` : ''}
     </div>`;
 }
