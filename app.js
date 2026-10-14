@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (화면 맨 위 통계 줄 끝에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 14;
+const APP_VERSION = 15;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -476,7 +476,8 @@ const seriesSource = (kind) => ({
 // 미스터블루: 검색 결과 웹페이지에서 작품 정보를 꺼냄
 function parseMrblue(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  return [...doc.querySelectorAll('li[data-pid]')].map((li) => {
+  // 진짜 검색 결과는 #listBox 안에만 있음 (결과가 없으면 '추천 신작' 목록이 대신 나와서 그건 빼야 함)
+  return [...doc.querySelectorAll('#listBox li[data-pid]')].map((li) => {
     const link = li.querySelector('.tit a');
     if (!link) return null;
     const category = li.querySelector('.label-category')?.textContent.trim() || ''; // 웹툰 / 만화 / 소설
@@ -549,21 +550,7 @@ const SEARCH_SOURCES = {
       return share ? `${share}.jpg` : '';
     },
   },
-  ridi: {
-    platform: '리디',
-    parse: (data) => (data.books || []).map((b) => {
-      const category = `${b.parent_category_name || ''} ${b.category_name || ''}`;
-      return {
-        sourceId: b.b_id,
-        title: b.title,
-        author: b.author,
-        cover: `https://img.ridicdn.net/cover/${b.b_id}/large`,
-        type: /웹툰/.test(category) ? 'webtoon' : /만화|코믹/.test(category) ? 'comic' : 'webnovel',
-        note: b.parent_category_name || b.category_name || '',
-      };
-    }),
-    hasMore: (data, page) => (page + 1) * 24 < (data.total || 0),
-  },
+  // 리디는 검색 요청을 막고 있어서(403) 검색에서 뺌 - 리디 링크는 직접 추가할 수 있음
   kakao: {
     platform: '카카오페이지',
     parse: (data) => (data.result?.list || []).map((s) => ({
@@ -597,7 +584,7 @@ async function fetchSearch(sourceKey, q, page = 0) {
 // ----- 6-2. 전체 검색 -----
 // 검색창 하나로 모든 플랫폼을 한꺼번에 검색하고, 같은 작품은 하나로 묶어서 보여줌
 // (앞에 있을수록 대표 정보(제목·작가·표지)로 먼저 쓰임 - 아마추어 연재인 베스트도전/도전만화는 맨 뒤)
-const ALL_SOURCES = ['naverWebtoon', 'kakaoWebtoon', 'kakao', 'seriesNovel', 'seriesComic', 'ridi', 'mrblue', 'naverBest', 'naverChallenge'];
+const ALL_SOURCES = ['naverWebtoon', 'kakaoWebtoon', 'kakao', 'seriesNovel', 'seriesComic', 'mrblue', 'naverBest', 'naverChallenge'];
 const sourceRank = (source) => ALL_SOURCES.indexOf(source);
 
 // 같은 작품인지 비교하려고 제목에서 띄어쓰기·기호·[독점] 같은 표시를 뺌
