@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -704,6 +704,7 @@ function parseSeries(html, kind) {
       unit,
       note: TYPES[type],
       desc: (li.querySelector('.dsc')?.textContent || '').replace(/​/g, '').trim(),
+      ongoing: /미완결/.test(text) ? '연재중' : /완결/.test(text) ? '완결' : '',
     };
   }).filter(Boolean);
 }
@@ -740,6 +741,7 @@ function parseMrblue(html) {
       unit: count ? count[1] : '',
       url: href ? new URL(href, 'https://www.mrblue.com').href : '',
       note: category,
+      ongoing: /완결/.test(info) ? '완결' : /연재/.test(info) ? '연재중' : '',
     };
   }).filter(Boolean);
 }
@@ -755,6 +757,7 @@ const naverSource = (platform) => ({
     type: 'webtoon',
     note: '',
     desc: w.synopsis || '',
+    ongoing: w.finished ? '완결' : '연재중',
   })),
   hasMore: (data, page) => page + 1 < (data.pageInfo?.totalPages || 0),
 });
@@ -815,6 +818,8 @@ const SEARCH_SOURCES = {
       type: s.operator_property?.is_manga ? 'manga' : s.category === '웹툰' ? 'webtoon' : 'webnovel',
       note: s.category || '',
       genre: s.sub_category || '',
+      // on_issue: Y = 연재중, N = 완결 (P 등 다른 값은 뜻이 확실하지 않아서 비워 둠)
+      ongoing: s.on_issue === 'Y' ? '연재중' : s.on_issue === 'N' ? '완결' : '',
     })),
     // 작품 소개와 태그는 검색 결과에 없어서 작품 정보에서 불러옴
     fetchInfo: async (item) => {
@@ -859,7 +864,7 @@ function titleKey(title) {
 // 지금 보고 있는 검색
 // groups: 묶은 작품들 (key → { key, items: 플랫폼별 결과, order: 처음 나온 순서 })
 // pages: 플랫폼별로 몇 페이지까지 봤는지 / 더 있는지 (더 보기 할 때 사용)
-let searchState = { q: '', groups: new Map(), pages: {}, failed: [], loading: false };
+let searchState = { q: '', groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all' } };
 let formLink = null;  // 입력 중인 작품의 대표 플랫폼 정보 { source, sourceId, unit }
 let formLinks = [];   // 입력 중인 작품의 "보러 갈 곳" 목록 [{ name, url }]
 
@@ -902,7 +907,7 @@ async function searchPlatform(more = false) {
   if (!more) {
     const q = $('s-query').value.trim();
     if (!q) return;
-    searchState = { q, groups: new Map(), pages: {}, failed: [], loading: false };
+    searchState = { q, groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all' } };
     targets = ALL_SOURCES.map((source) => ({ source, page: 0 }));
     box.innerHTML = '<p class="msg">모든 플랫폼에서 찾는 중…</p>';
   } else {
@@ -937,7 +942,7 @@ function renderSearchResults() {
   const box = $('s-results');
   const qKey = titleKey(searchState.q);
   // 순서: 제목이 검색어와 똑같은 작품 → 여러 플랫폼에 있는 작품 → 대표 플랫폼 순서 → 처음 나온 순서
-  const groups = [...searchState.groups.values()].sort((a, b) =>
+  const all = [...searchState.groups.values()].sort((a, b) =>
     (titleKey(mainItem(b).title) === qKey) - (titleKey(mainItem(a).title) === qKey) ||
     b.items.length - a.items.length ||
     sourceRank(mainItem(a).source) - sourceRank(mainItem(b).source) ||
@@ -946,14 +951,33 @@ function renderSearchResults() {
   const failed = searchState.failed.length
     ? `<p class="msg"><small>검색하지 못한 곳: ${esc(searchState.failed.join(', '))}</small></p>`
     : '';
-  if (!groups.length) {
+  if (!all.length) {
     box.innerHTML = (searchState.failed.length === ALL_SOURCES.length
       ? '<p class="msg">검색에 실패했어요. 잠시 후 다시 해보세요.</p>'
       : '<p class="msg">검색 결과가 없어요.</p>') + failed;
     return;
   }
+
+  // 종류 / 플랫폼 필터 (결과에 있는 것만 버튼으로)
+  const f = searchState.filter;
+  const platformOf = (i) => SEARCH_SOURCES[i.source].platform;
+  const typesIn = Object.keys(TYPES).filter((t) => all.some((g) => mainItem(g).type === t));
+  const platformsIn = [...new Set(ALL_SOURCES.map((s) => SEARCH_SOURCES[s].platform))]
+    .filter((p) => all.some((g) => g.items.some((i) => platformOf(i) === p)));
+  const chip = (kind, value, label) =>
+    `<button type="button" class="f-chip${f[kind] === value ? ' active' : ''}" data-filter="${kind}" data-value="${esc(value)}">${esc(label)}</button>`;
+  const filters = `
+    <div class="s-filters">
+      <div class="f-row">${chip('type', 'all', '전체')}${typesIn.map((t) => chip('type', t, TYPES[t])).join('')}</div>
+      <div class="f-row">${chip('platform', 'all', '모든 플랫폼')}${platformsIn.map((p) => chip('platform', p, p)).join('')}</div>
+    </div>`;
+  const groups = all.filter((g) =>
+    (f.type === 'all' || mainItem(g).type === f.type) &&
+    (f.platform === 'all' || g.items.some((i) => platformOf(i) === f.platform)));
+
   const hasMore = Object.values(searchState.pages).some((p) => p.hasMore);
-  box.innerHTML = `<p class="s-count">검색 결과 <b>${groups.length}</b>${hasMore ? '+' : ''}</p>` + groups.map((g) => {
+  box.innerHTML = filters + `<p class="s-count">검색 결과 ${groups.length}${hasMore ? '+' : ''}</p>`
+    + (groups.length ? '' : '<p class="msg">조건에 맞는 작품이 없어요.</p>') + groups.map((g) => {
     const main = mainItem(g);
     const cover = coverItem(g);
     const platforms = [...new Set(g.items.map((i) => SEARCH_SOURCES[i.source].platform))];
@@ -962,14 +986,14 @@ function renderSearchResults() {
         <img src="${esc(cover?.cover || '')}" alt="" loading="lazy"${/^#[0-9a-f]{3,8}$/i.test(cover?.coverBg || '') ? ` style="background:${cover.coverBg}"` : ''}>
         <span class="s-body">
           <b>${esc(main.title)}</b>
-          <small>${esc([main.author, TYPES[main.type]].filter(Boolean).join(' · '))}</small>
+          <small>${esc([main.author, TYPES[main.type], g.items.find((i) => i.ongoing)?.ongoing].filter(Boolean).join(' · '))}</small>
           <span class="pf-icons">${platforms.map((p) => pfIconHTML(p)).join('')}</span>
         </span>
         ${findInLibrary(g) ? '<span class="in-library">내 서재</span>' : ''}
       </button>`;
   }).join('') + failed + (hasMore
-    ? `<button type="button" id="s-more" class="ghost s-more">더 보기 (지금 ${groups.length}개)</button>`
-    : `<p class="msg">검색 결과 ${groups.length}개를 모두 봤어요.</p>`);
+    ? `<button type="button" id="s-more" class="ghost s-more">더 보기</button>`
+    : `<p class="msg">검색 결과를 모두 봤어요.</p>`);
 }
 
 
@@ -1119,6 +1143,7 @@ function groupAsWork(group, info = {}) {
     coverSource: info.cover ? '카카오웹툰' : cover ? SEARCH_SOURCES[cover.source].platform : '',
     platform: [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', '),
     genre: sorted.find((i) => i.genre)?.genre || '',
+    ongoing: sorted.find((i) => i.ongoing)?.ongoing || '', // 연재중 / 완결
     desc: descs.sort((a, b) => b.length - a.length)[0] || '',
     tags: info.tags || [],
     links: sorted
@@ -1185,7 +1210,12 @@ async function fillMissingInfo(w) {
     }
     if (!found?.desc) return;
     // 소개만 채우는 거라 '최근 수정' 순서는 그대로 둠
-    const work = { ...works.find((x) => x.id === w.id), desc: found.desc, genre: w.genre || found.genre || '' };
+    const work = {
+      ...works.find((x) => x.id === w.id),
+      desc: found.desc,
+      genre: w.genre || found.genre || '',
+      ongoing: w.ongoing || found.ongoing || '',
+    };
     if (found.tags?.length) work.tags = found.tags;
     await saveOne(work);
     works = works.map((x) => (x.id === w.id ? work : x));
@@ -1213,29 +1243,29 @@ function detailHTML(w, mine) {
     </div>
 
     <div class="detail-info">
-      <p class="kicker">${esc([TYPES[w.type], w.genre, w.platform].filter(Boolean).join(' · '))}</p>
+      <p class="kicker">${esc([TYPES[w.type], w.platform].filter(Boolean).join(' · '))}</p>
       <h2 class="detail-title">${esc(w.title)}</h2>
-      ${w.author ? `<p class="detail-author">${esc(w.author)}</p>` : ''}
+      <p class="detail-author">${esc([w.author, w.genre, w.ongoing].filter(Boolean).join(' · '))}</p>
     </div>
 
     ${mine ? myRecordHTML(mine) : ''}
-
-    ${links.length ? `
-      <div class="detail-sec">
-        <h3>보러 가기</h3>
-        <div class="pf-buttons">
-          ${links.map((l) => `
-            <a class="pf-btn go-link" href="${esc(l.url)}" target="_blank" rel="noopener">
-              ${pfIconHTML(l.name)}<span>${esc(l.name)}</span>
-            </a>`).join('')}
-        </div>
-      </div>` : ''}
 
     ${w.desc ? `
       <div class="detail-sec">
         <h3>작품 소개</h3>
         <p class="detail-desc">${esc(w.desc)}</p>
         ${w.tags?.length ? `<div class="tag-list">${w.tags.map((t) => `<span class="tag">#${esc(t)}</span>`).join('')}</div>` : ''}
+      </div>` : ''}
+
+    ${links.length ? `
+      <div class="detail-sec">
+        <h3>작품 보러 가기</h3>
+        <div class="pf-buttons">
+          ${links.map((l) => `
+            <a class="pf-btn go-link" href="${esc(l.url)}" target="_blank" rel="noopener">
+              ${pfIconHTML(l.name)}<span>${esc(l.name)}</span>
+            </a>`).join('')}
+        </div>
       </div>` : ''}
 
     ${mine ? `
@@ -1534,6 +1564,9 @@ function bindEvents() {
   });
   $('s-results').addEventListener('click', (e) => {
     if (e.target.closest('#s-more')) { searchPlatform(true); return; }
+    // 종류 / 플랫폼 필터
+    const filter = e.target.closest('[data-filter]');
+    if (filter) { searchState.filter[filter.dataset.filter] = filter.dataset.value; renderSearchResults(); return; }
     const item = e.target.closest('.s-item');
     if (!item) return;
     const group = searchState.groups.get(item.dataset.key);
