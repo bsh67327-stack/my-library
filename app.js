@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 53;
+const APP_VERSION = 55;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -859,7 +859,13 @@ const SEARCH_SOURCES = {
       if (!/^(novel|comic|webtoon)\/[A-Za-z0-9_]+$/.test(path)) return {};
       const data = await callServer('mrblueInfo', path);
       // 19세 작품은 미스터블루 로그인이 있어야 작품 페이지가 열려서 소개를 못 받음
-      return { desc: data.desc || '', tags: data.tags || [], loginOnly: !!data.loginOnly };
+      return {
+        desc: data.desc || '',
+        tags: data.tags || [],
+        genre: data.genre || '',
+        ongoing: /완결/.test(data.ongoing || '') ? '완결' : /연재/.test(data.ongoing || '') ? '연재중' : '',
+        loginOnly: !!data.loginOnly,
+      };
     },
   },
   kakaoWebtoon: {
@@ -963,7 +969,7 @@ function titleKey(title) {
 // 지금 보고 있는 검색
 // groups: 묶은 작품들 (key → { key, items: 플랫폼별 결과, order: 처음 나온 순서 })
 // pages: 플랫폼별로 몇 페이지까지 봤는지 / 더 있는지 (더 보기 할 때 사용)
-let searchState = { q: '', groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all' } };
+let searchState = { q: '', groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all', ongoing: 'all' } };
 let formLink = null;  // 입력 중인 작품의 대표 플랫폼 정보 { source, sourceId, unit }
 let formLinks = [];   // 입력 중인 작품의 "보러 갈 곳" 목록 [{ name, url }]
 
@@ -1018,7 +1024,7 @@ async function searchPlatform(more = false, fromFinder = false) {
   } else {
     const q = $('s-query').value.trim();
     if (!q) return;
-    searchState = { q, groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all' } };
+    searchState = { q, groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all', ongoing: 'all' } };
     targets = ALL_SOURCES.map((source) => ({ source, page: 0 }));
     box.innerHTML = '<p class="msg">모든 플랫폼에서 찾는 중…</p>';
   }
@@ -1073,12 +1079,11 @@ function renderSearchResults() {
       sourceRank(mainItem(a).source) - sourceRank(mainItem(b).source) ||
       a.order - b.order
   );
-  // 작품 찾기에서 고른 종류 / 플랫폼(그 플랫폼이 들어 있으면 다른 플랫폼에도 있어도 됨) / 연재 상태로 거름
+  // 작품 찾기에서 고른 종류 / 플랫폼(그 플랫폼이 들어 있으면 다른 플랫폼에도 있어도 됨)으로 거름
   if (finder) {
     all = all.filter((g) =>
       (!finder.types.size || finder.types.has(mainItem(g).type)) &&
-      (!finder.platforms?.size || g.items.some((i) => finder.platforms.has(SEARCH_SOURCES[i.source].platform))) &&
-      (!finder.ongoing || mergeOngoing(g.items.map((i) => i.ongoing)) === finder.ongoing));
+      (!finder.platforms?.size || g.items.some((i) => finder.platforms.has(SEARCH_SOURCES[i.source].platform))));
   }
   const failed = searchState.failed.length
     ? `<p class="msg"><small>${finder ? '불러오지 못한 곳' : '검색하지 못한 곳'}: ${esc(searchState.failed.join(', '))}</small></p>`
@@ -1090,7 +1095,8 @@ function renderSearchResults() {
     return;
   }
 
-  // 종류 / 플랫폼 필터 (결과에 있는 것만 버튼으로)
+  // 종류 · 연재 상태 / 플랫폼 필터 (종류·플랫폼은 결과에 있는 것만 버튼으로)
+  // 연재 상태: 연재중 / 완결 (다시 누르면 해제, 연재 상태를 모르는 작품은 고르면 빠짐)
   const f = searchState.filter;
   const platformOf = (i) => SEARCH_SOURCES[i.source].platform;
   const typesIn = Object.keys(TYPES).filter((t) => all.some((g) => mainItem(g).type === t));
@@ -1100,12 +1106,14 @@ function renderSearchResults() {
     `<button type="button" class="f-chip${f[kind] === value ? ' active' : ''}" data-filter="${kind}" data-value="${esc(value)}">${esc(label)}</button>`;
   const filters = `
     <div class="s-filters">
-      <div class="f-row">${chip('type', 'all', '전체')}${typesIn.map((t) => chip('type', t, TYPES[t])).join('')}</div>
+      <div class="f-row">${chip('type', 'all', '전체')}${typesIn.map((t) => chip('type', t, TYPES[t])).join('')}<span class="f-sep"></span>${chip('ongoing', '연재중', '연재중')}${chip('ongoing', '완결', '완결')}</div>
       <div class="f-row">${chip('platform', 'all', '모든 플랫폼')}${platformsIn.map((p) => chip('platform', p, p)).join('')}</div>
     </div>`;
+  const ongoingOf = (g) => mergeOngoing(g.items.map((i) => i.ongoing));
   const groups = all.filter((g) =>
     (f.type === 'all' || mainItem(g).type === f.type) &&
-    (f.platform === 'all' || g.items.some((i) => platformOf(i) === f.platform)));
+    (f.platform === 'all' || g.items.some((i) => platformOf(i) === f.platform)) &&
+    (f.ongoing === 'all' || (f.ongoing === '완결' ? /완결/.test(ongoingOf(g)) : ongoingOf(g) === f.ongoing)));
 
   const hasMore = Object.values(searchState.pages).some((p) => p.hasMore);
   const countLabel = finder ? `${finder.genre.name} 인기 작품` : '검색 결과';
@@ -1218,9 +1226,10 @@ const FINDER_PLATFORMS = ['네이버웹툰', '카카오웹툰', '카카오페이
 // (카카오페이지·네이버 시리즈는 키워드별 목록이 없어서 빠짐)
 //   naverTag: 네이버웹툰 태그 번호 / kwKey: 카카오웹툰 키워드 이름 / mbNovel·mbToon·mbComic: 미스터블루 키워드 페이지
 const MB_KEY = (type, id) => `keywords/${type}?id=${id}`;
+// (웹툰 키워드 페이지에 웹툰과 만화가 같이 나와서 만화 페이지는 따로 받지 않음)
 const mbKeyword = (novelId, toonId) => ({
   ...(novelId && { mbNovel: MB_KEY('novel', novelId) }),
-  ...(toonId && { mbToon: MB_KEY('webtoon', toonId), mbComic: MB_KEY('comic', toonId) }),
+  ...(toonId && { mbToon: MB_KEY('webtoon', toonId) }),
 });
 const FINDER_KEYWORDS = [
   { name: '회귀', naverTag: '99', kwKey: '회귀물', ...mbKeyword(42, 902) },
@@ -1307,15 +1316,19 @@ const FINDER_FETCH = {
   seriesNovel: (g, page) => seriesGenreList('novel', g.novel, page),
   seriesComic: (g, page) => seriesGenreList('comic', g.comic, page),
   // 미스터블루 장르 페이지 인기순: 한 번에 100~120개 (다음 페이지는 만화 목록만 있음)
+  // 키워드 페이지는 검색 결과와 모양이 같아서 검색 결과 읽는 법으로 (종류·완결 표시도 거기서 읽힘)
   mrblue: (g, page, types) => {
     const list = (paths) => [].concat(paths || []);
+    const isKeyword = (p) => p.startsWith('keywords/');
     const jobs = [
-      ...(wantType(types, 'webtoon') ? list(g.mbToon).map((p) => [p, 'webtoon']) : []),
+      ...list(g.mbToon).filter((p) => wantType(types, 'webtoon', ...(isKeyword(p) ? ['comic'] : []))).map((p) => [p, 'webtoon']),
       ...(wantType(types, 'comic') ? list(g.mbComic).map((p) => [p, 'comic']) : []),
       ...(wantType(types, 'webnovel') ? list(g.mbNovel).map((p) => [p, 'webnovel']) : []),
     ].filter(([path]) => page === 0 || path.startsWith('comic/'));
     return mergeLists(jobs.map(async ([path, type]) => {
-      const items = parseMrblueGenre(await callServer('mrblueGenre', path, page, true), type);
+      const html = await callServer('mrblueGenre', path, page, true);
+      const items = isKeyword(path) ? parseMrblue(html) : parseMrblueGenre(html, type);
+      items.forEach((i) => { i.author = uniqueAuthors(i.author); });
       return { items, hasMore: path.startsWith('comic/') && items.length >= 120 };
     }));
   },
@@ -1357,14 +1370,15 @@ function parseMrblueGenre(html, type) {
       type,
       url: href ? new URL(href, 'https://www.mrblue.com').href : '',
       note: TYPES[type],
-      ongoing: '', // 장르 페이지에는 연재 상태가 없음
+      // 웹툰 목록에만 '완결'·'휴재' 표시가 있음 (표시가 없으면 연재중) / 소설·만화 목록은 알 수 없음
+      ongoing: type !== 'webtoon' ? '' : li.querySelector('.label-final') ? '완결' : '연재중',
     };
   }).filter(Boolean);
 }
 
 // 작품 찾기 화면에서 고른 것 (types·platforms 가 비어 있으면 전체)
 // genre 와 keyword 는 둘 중 하나만 (하나를 고르면 다른 하나는 풀림)
-let finderPick = { genre: '', keyword: '', types: new Set(), platforms: new Set(), ongoing: '' };
+let finderPick = { genre: '', keyword: '', types: new Set(), platforms: new Set() };
 
 function openFinder() {
   renderFinder();
@@ -1375,15 +1389,15 @@ function openFinder() {
 function renderFinder() {
   const pick = (kind, value, label, on) =>
     `<button type="button" class="f-pick${on ? ' active' : ''}" data-pick="${kind}" data-value="${esc(value)}">${esc(label)}</button>`;
-  $('finderGenres').innerHTML = FINDER_GENRES.map((g) => pick('genre', g.name, g.name, finderPick.genre === g.name)).join('');
+  // 장르는 검색 화면 "장르별 검색"과 같은 아이콘으로
+  $('finderGenres').innerHTML = FINDER_GENRES.map((g) =>
+    genreIconHTML(g.name, `data-pick="genre" data-value="${esc(g.name)}"`, finderPick.genre === g.name)).join('');
   $('finderKeywords').innerHTML = FINDER_KEYWORDS.map((k) => pick('keyword', k.name, k.name, finderPick.keyword === k.name)).join('');
   $('finderTypes').innerHTML = Object.entries(TYPES).map(([t, label]) => pick('types', t, label, finderPick.types.has(t))).join('');
   $('finderPlatforms').innerHTML = FINDER_PLATFORMS.map((p) => pick('platforms', p, p, finderPick.platforms.has(p))).join('');
-  $('finderOngoing').innerHTML = ['연재중', '완결'].map((o) => pick('ongoing', o, o, finderPick.ongoing === o)).join('');
 }
 
 // 고른 장르·종류·플랫폼·연재 상태로 받아 올 곳
-// (미스터블루는 목록에 연재 상태가 없어서 연재 상태를 고르면 뺌)
 // 플랫폼은 여기서 거르지 않고 모든 플랫폼에서 받은 뒤, 고른 플랫폼이 들어 있는 작품만 남김
 // (그래야 고른 플랫폼 + 다른 플랫폼에도 있는 작품이 플랫폼 아이콘까지 다 나옴)
 function finderSources(g) {
@@ -1394,7 +1408,7 @@ function finderSources(g) {
     ((g.kpToon && ok('카카오페이지', 'webtoon', 'comic')) || (g.kpNovel && ok('카카오페이지', 'webnovel'))) && 'kakao',
     g.novel && ok('네이버 시리즈', 'webnovel') && 'seriesNovel',
     g.comic && ok('네이버 시리즈', 'webtoon', 'comic') && 'seriesComic',
-    !finderPick.ongoing && ((g.mbToon && ok('미스터블루', 'webtoon')) || (g.mbComic && ok('미스터블루', 'comic'))
+    ((g.mbToon && ok('미스터블루', 'webtoon')) || (g.mbComic && ok('미스터블루', 'comic'))
       || (g.mbNovel && ok('미스터블루', 'webnovel'))) && 'mrblue',
   ].filter(Boolean);
 }
@@ -1406,8 +1420,8 @@ function runFinder() {
   const sources = finderSources(g);
   if (!sources.length) { toast('이 조건으로 찾을 수 있는 곳이 없어요'); return; }
   searchState = {
-    q: '', groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all' },
-    finder: { genre: g, sources, types: new Set(finderPick.types), platforms: new Set(finderPick.platforms), ongoing: finderPick.ongoing },
+    q: '', groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all', ongoing: 'all' },
+    finder: { genre: g, sources, types: new Set(finderPick.types), platforms: new Set(finderPick.platforms) },
   };
   openOverlay('searchPage');
   $('s-query').value = '';
@@ -1482,7 +1496,6 @@ function addManualLink() {
 // ----- 6-4. 검색 화면 (홈 검색창이나 ＋ 버튼을 누르면 열림) -----
 // 처음에는 최근 검색어·좋아한 작가·추천 키워드, 검색하면 결과 목록
 const RECENT_KEY = 'recentSearches';
-const SUGGEST_KEYWORDS = ['회귀', '빙의', '환생', '헌터', '무협', '로맨스판타지', '아카데미', '먼치킨', '아포칼립스', '게임'];
 
 function recentSearches() {
   try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { return []; }
@@ -1519,17 +1532,21 @@ function showSearchIntro() {
     </span>`).join('');
 
   // 장르별 검색: 장르 아이콘 (작품 찾기의 장르와 같음)
-  $('genreIcons').innerHTML = FINDER_GENRES.map((g) => {
-    const icon = GENRE_ICONS[g.name] || GENRE_ICONS.판타지;
-    return `
-      <button type="button" class="genre-icon" data-genre="${esc(g.name)}" style="--g:${icon.color}">
-        <span class="gi-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon.path}</svg></span>
-        <span class="gi-name">${esc(g.name)}</span>
-      </button>`;
-  }).join('');
+  $('genreIcons').innerHTML = FINDER_GENRES.map((g) => genreIconHTML(g.name, `data-genre="${esc(g.name)}"`)).join('');
 
-  $('suggestKeywords').innerHTML = SUGGEST_KEYWORDS.map((k) =>
-    `<button type="button" class="chip chip-word" data-q="${esc(k)}">${esc(k)}</button>`).join('');
+  // 키워드 검색: 누르면 그 키워드로 작품 찾기 (제목 검색이 아니라 플랫폼 키워드·태그 목록)
+  $('suggestKeywords').innerHTML = FINDER_KEYWORDS.map((k) =>
+    `<button type="button" class="chip chip-word" data-keyword="${esc(k.name)}">${esc(k.name)}</button>`).join('');
+}
+
+// 장르 아이콘 하나 (검색 화면 "장르별 검색"과 작품 찾기 화면에서 같이 씀)
+function genreIconHTML(name, attrs, active = false) {
+  const icon = GENRE_ICONS[name] || GENRE_ICONS.판타지;
+  return `
+    <button type="button" class="genre-icon${active ? ' active' : ''}" ${attrs} style="--g:${icon.color}">
+      <span class="gi-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon.path}</svg></span>
+      <span class="gi-name">${esc(name)}</span>
+    </button>`;
 }
 
 // 장르별 검색 아이콘: 장르마다 색 + 직접 그린 선 그림 (24x24)
@@ -2249,7 +2266,7 @@ function bindEvents() {
     const btn = e.target.closest('[data-pick]');
     if (!btn) return;
     const { pick, value } = btn.dataset;
-    if (pick === 'genre' || pick === 'keyword' || pick === 'ongoing') {
+    if (pick === 'genre' || pick === 'keyword') {
       finderPick[pick] = finderPick[pick] === value ? '' : value;
       // 장르와 키워드는 둘 중 하나만
       if (pick === 'genre' && finderPick.genre) finderPick.keyword = '';
@@ -2261,7 +2278,7 @@ function bindEvents() {
     renderFinder();
   });
   $('finderReset').addEventListener('click', () => {
-    finderPick = { genre: '', keyword: '', types: new Set(), platforms: new Set(), ongoing: '' };
+    finderPick = { genre: '', keyword: '', types: new Set(), platforms: new Set() };
     renderFinder();
   });
   $('finderRun').addEventListener('click', runFinder);
@@ -2282,7 +2299,13 @@ function bindEvents() {
     // 장르 아이콘: 그 장르만 골라서 바로 작품 찾기 / "장르별 검색 >": 작품 찾기 화면
     const genre = e.target.closest('[data-genre]');
     if (genre) {
-      finderPick = { genre: genre.dataset.genre, keyword: '', types: new Set(), platforms: new Set(), ongoing: '' };
+      finderPick = { genre: genre.dataset.genre, keyword: '', types: new Set(), platforms: new Set() };
+      runFinder();
+      return;
+    }
+    const keyword = e.target.closest('[data-keyword]');
+    if (keyword) {
+      finderPick = { genre: '', keyword: keyword.dataset.keyword, types: new Set(), platforms: new Set() };
       runFinder();
       return;
     }
@@ -2296,7 +2319,13 @@ function bindEvents() {
     if (e.target.closest('#s-more')) { searchPlatform(true); return; }
     // 종류 / 플랫폼 필터
     const filter = e.target.closest('[data-filter]');
-    if (filter) { searchState.filter[filter.dataset.filter] = filter.dataset.value; renderSearchResults(); return; }
+    if (filter) {
+      const { filter: kind, value } = filter.dataset;
+      // 연재 상태는 다시 누르면 해제
+      searchState.filter[kind] = kind === 'ongoing' && searchState.filter.ongoing === value ? 'all' : value;
+      renderSearchResults();
+      return;
+    }
     const item = e.target.closest('.s-item');
     if (!item) return;
     const group = searchState.groups.get(item.dataset.key);

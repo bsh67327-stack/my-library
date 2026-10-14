@@ -668,6 +668,13 @@ body.overlay-open { position: fixed; left: 0; right: 0; overflow: hidden; }
 .gi-badge svg { width: 26px; height: 26px; }
 .genre-icon:active .gi-badge { transform: scale(0.95); }
 .gi-name { font-size: 0.84rem; color: var(--sub); white-space: nowrap; }
+/* 작품 찾기 화면: 장르 아이콘을 여러 줄로, 고른 장르는 테두리 + 굵은 이름 */
+#finderGenres { gap: 14px 4px; }
+#finderGenres .genre-icon { width: calc((100% - 16px) / 5); }
+.genre-icon.active .gi-badge { box-shadow: 0 0 0 2px var(--g); }
+.genre-icon.active .gi-name { color: var(--text); font-weight: 700; }
+/* 검색·작품 찾기 결과 필터: 종류 버튼과 연재중/완결 버튼 사이 칸막이 */
+.f-sep { flex: none; align-self: center; width: 1px; height: 18px; margin: 0 4px; background: var(--border); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   display: inline-flex; align-items: center;

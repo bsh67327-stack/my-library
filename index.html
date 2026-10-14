@@ -17,7 +17,7 @@
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
   <!-- 글꼴: Pretendard -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=53">
+  <link rel="stylesheet" href="style.css?v=55">
 </head>
 <body>
   <main>
@@ -30,11 +30,11 @@
       <!-- 누르면 작품 추가 창이 열리고 플랫폼 검색을 바로 할 수 있음 -->
       <button type="button" id="homeSearch" class="search-fake">작품을 검색해서 서재에 추가해 보세요</button>
 
-      <!-- 작품 찾기 배너: 장르 · 종류 · 플랫폼 · 연재 상태로 찾기 -->
+      <!-- 작품 찾기 배너: 장르 · 키워드 · 종류 · 플랫폼으로 찾기 -->
       <button type="button" id="finderBanner" class="finder-banner">
         <span class="fb-text">
           <b>뭐 볼지 고민될 때<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></b>
-          <small>장르, 종류, 플랫폼, 연재 상태로 작품 찾기</small>
+          <small>장르, 키워드, 종류, 플랫폼으로 작품 찾기</small>
         </span>
         <svg class="fb-art" viewBox="0 0 96 80" aria-hidden="true">
           <rect x="10" y="18" width="38" height="52" rx="5" fill="#ffd2b0" transform="rotate(-8 29 44)"/>
@@ -176,8 +176,6 @@
       <h3>플랫폼</h3>
       <div id="finderPlatforms" class="picks"></div>
       <p class="finder-note">플랫폼을 고르면 그 플랫폼에 있는 작품만 보여요. 다른 플랫폼에도 있으면 같이 표시돼요.</p>
-      <h3>연재 상태</h3>
-      <div id="finderOngoing" class="picks picks-seg"></div>
     </div>
     <div class="finder-bar">
       <button type="button" id="finderReset" class="finder-reset">
@@ -443,6 +441,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=53"></script>
+  <script src="app.js?v=55"></script>
 </body>
 </html>
