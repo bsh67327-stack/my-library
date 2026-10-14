@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -1257,9 +1257,17 @@ async function loadGroupInfo(state) {
   const targets = [...new Set([main, kw].filter(Boolean))];
   if (!targets.length) return;
 
-  const results = await Promise.allSettled(targets.map((i) => SEARCH_SOURCES[i.source].fetchInfo(i)));
+  // 불러오는 동안은 흰 화면에 로딩 표시만 (너무 오래 걸리면 8초 뒤 있는 정보로 보여줌)
+  state.loading = true;
+  renderDetail();
+  const tooLong = new Promise((resolve) => setTimeout(() => resolve(null), 8000));
+  const results = await Promise.race([
+    Promise.allSettled(targets.map((i) => SEARCH_SOURCES[i.source].fetchInfo(i))),
+    tooLong,
+  ]);
   if (detailState !== state) return; // 그사이 화면을 닫았으면 무시
-  state.info = mergeInfo(results.map((r) => (r.status === 'fulfilled' ? r.value : null)));
+  state.loading = false;
+  state.info = mergeInfo((results || []).map((r) => (r.status === 'fulfilled' ? r.value : null)));
   renderDetail();
 }
 
@@ -1297,6 +1305,12 @@ function renderDetail() {
   if (!detailState) return;
   const mine = detailState.workId ? works.find((w) => w.id === detailState.workId) : null;
   if (detailState.workId && !mine) return;
+  if (detailState.loading) {
+    $('detailHero').innerHTML = '';
+    $('detailBody').innerHTML = '<div class="detail-loading" role="status" aria-label="불러오는 중"><span class="spinner"></span></div>';
+    lastHero = '';
+    return;
+  }
   const w = mine || groupAsWork(detailState.group, detailState.info);
   const hero = heroHTML(w);
   if (hero !== lastHero) {
