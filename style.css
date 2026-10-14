@@ -720,8 +720,8 @@ dialog button:focus { outline: none; }
 /* 한줄평: 없으면 "한줄평 쓰기" 버튼, 있으면 한줄평 카드 (누르면 수정) */
 .review-btn {
   display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
-  padding: 13px; border: 1.5px dashed var(--border); border-radius: 12px;
-  background: var(--bg); color: var(--sub); font-weight: 700;
+  padding: 13px; border: none; border-radius: 12px;
+  background: var(--accent); color: var(--accent-text);
 }
 .review-btn svg { width: 18px; height: 18px; }
 .review-card {
@@ -733,17 +733,61 @@ dialog button:focus { outline: none; }
 .review-text::after { content: "”"; color: var(--accent); font-weight: 900; margin-left: 2px; }
 .review-edit { flex: none; font-size: 0.78rem; color: var(--muted); padding-top: 2px; }
 
-/* 한줄평 쓰기 창 */
-#reviewInput {
-  width: 100%; resize: none; font: inherit; font-size: 16px; line-height: 1.5; color: var(--text);
-  padding: 12px; border: 1.5px solid transparent; border-radius: 12px; background: var(--surface-2);
+/* ===== 한줄평 쓰기 화면 ===== */
+#reviewPage { z-index: 32; } /* 작품 정보 화면 위에 열림 */
+.review-top { border-bottom: 1px solid var(--border); padding-right: 12px; }
+.overlay-title { flex: 1; text-align: center; font-size: 1.02rem; font-weight: 700; }
+.save-btn {
+  flex: none; padding: 7px 14px; border: none; border-radius: 999px;
+  background: var(--accent); color: var(--accent-text); font-size: 0.9rem;
 }
-#reviewInput:focus { outline: none; border-color: var(--text); }
-.char-count { align-self: flex-end; margin-top: -10px; font-size: 0.76rem; color: var(--muted); }
+.save-btn:disabled { background: var(--surface-2); color: var(--muted); cursor: default; }
+#reviewPage .overlay-body { padding-top: 16px; }
 
-/* 작품 정보 화면: 작품명 말고는 굵은 글씨를 쓰지 않음 */
+/* 고른 작품 카드 */
+.review-work, .pick-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 10px; border: none; border-radius: 14px; background: var(--surface-2); font-weight: 400;
+}
+.review-work:disabled { cursor: default; color: inherit; }
+.review-work .thumb, .pick-item .thumb { width: 52px; box-shadow: none; }
+.review-work .item-body, .pick-item .item-body { display: flex; flex-direction: column; gap: 2px; }
+.review-work-title { font-size: 0.98rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-work .author, .pick-item .author { font-size: 0.8rem; color: var(--muted); }
+.review-change { flex: none; font-size: 0.82rem; color: var(--accent-strong); }
+
+/* 작품 고르기 */
+.picker-guide { margin: 4px 0 12px; font-size: 1.05rem; font-weight: 700; }
+#pickerQuery { width: 100%; margin-bottom: 8px; }
+.pick-list { display: flex; flex-direction: column; gap: 6px; }
+.pick-item { background: none; }
+.pick-item:active { background: var(--surface-2); }
+.has-review { flex: none; font-size: 0.72rem; padding: 3px 8px; border-radius: 6px; background: var(--surface-2); color: var(--muted); }
+
+/* 별점 + 한줄평 */
+.review-rating { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 0 22px; }
+#reviewInput {
+  width: 100%; resize: none; font: inherit; font-size: 16px; line-height: 1.6; color: var(--text);
+  padding: 14px; border: 1.5px solid var(--border); border-radius: 14px; background: var(--surface);
+}
+#reviewInput:focus { outline: none; border-color: var(--accent); }
+.review-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.spoiler-check { flex-direction: row; align-items: center; gap: 6px; font-size: 0.86rem; font-weight: 400; color: var(--sub); cursor: pointer; }
+.spoiler-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.char-count { font-size: 0.78rem; color: var(--muted); }
+.review-delete { display: block; margin: 30px auto 0; }
+
+/* 피드: 스포일러 한줄평은 흐리게 (누르면 보임) */
+.post-text.is-spoiler { position: relative; }
+.post-text.is-spoiler { color: transparent; text-shadow: 0 0 9px rgba(120, 120, 120, 0.8); user-select: none; }
+.post-text.is-spoiler::after {
+  content: "스포일러가 있는 한줄평이에요 · 눌러서 보기";
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 0.82rem; color: var(--sub); text-shadow: none;
+}
+
+/* 작품 정보 화면: 작품명과 섹션 제목(작품 소개 / 작품 보러 가기) 말고는 굵은 글씨를 쓰지 않음 */
 #detailPage .kicker,
-#detailPage .detail-sec h3,
 #detailPage .record-txt b,
 #detailPage .record-label,
 #detailPage .stepper input,
@@ -751,7 +795,10 @@ dialog button:focus { outline: none; }
 #detailPage .pf-btn,
 #detailPage .detail-dates dd,
 #detailPage .detail-cta .primary { font-weight: 400; }
-#detailPage .detail-sec h3 { font-size: 0.95rem; color: var(--sub); }
+#detailPage .detail-sec h3 { font-size: 1rem; font-weight: 700; color: var(--text); }
+/* 마지막 본 회차: 가운데 정렬 */
+#detailPage .progress-row { justify-content: center; }
+#detailPage .progress-row .record-label { width: auto; }
 #detailPage .record-txt b { font-size: 0.95rem; }
 #detailPage .review-text::before,
 #detailPage .review-text::after { font-weight: 400; }

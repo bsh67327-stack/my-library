@@ -16,7 +16,7 @@
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
   <!-- 글꼴: Pretendard -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
   <main>
@@ -119,7 +119,7 @@
       </header>
       <div class="notice">
         <b>다른 독자들의 한줄평이 곧 여기에 모여요</b>
-        <span>지금은 내가 남긴 한줄평만 보여요.</span>
+        <span>지금은 내가 남긴 한줄평만 보여요. 오른쪽 아래 ＋로 한줄평을 남겨 보세요.</span>
       </div>
       <div id="feedList" class="feed"></div>
     </section>
@@ -214,21 +214,41 @@
     </form>
   </dialog>
 
-  <!-- ===== 한줄평 쓰기 창 ===== -->
-  <dialog id="reviewDialog" class="small-dialog">
-    <form id="reviewForm">
-      <h2>한줄평</h2>
-      <p id="reviewWork" class="dialog-desc"></p>
-      <textarea id="reviewInput" maxlength="100" rows="3" placeholder="이 작품을 한 줄로 표현하면?" aria-label="한줄평"></textarea>
-      <span id="reviewCount" class="char-count">0/100</span>
-      <div class="form-actions">
-        <button type="button" id="reviewDelete" class="danger">지우기</button>
-        <span class="spacer"></span>
-        <button type="button" id="reviewCancel" class="ghost">취소</button>
-        <button type="submit" class="primary">저장</button>
+  <!-- ===== 한줄평 쓰기 화면 (전체 화면) ===== -->
+  <section id="reviewPage" class="overlay" hidden>
+    <div class="overlay-top review-top">
+      <button type="button" id="reviewClose" class="back-btn" aria-label="닫기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+      <h2 class="overlay-title">한줄평 쓰기</h2>
+      <button type="button" id="reviewSave" class="save-btn" disabled>등록</button>
+    </div>
+
+    <div class="overlay-body">
+      <div id="reviewWorkBox"></div>
+
+      <!-- 피드에서 열었을 때: 내 서재에서 작품 고르기 -->
+      <div id="reviewPicker" hidden>
+        <p class="picker-guide">어떤 작품에 한줄평을 남길까요?</p>
+        <input type="search" id="pickerQuery" placeholder="내 서재에서 제목 · 작가 찾기" autocomplete="off" aria-label="내 서재에서 작품 찾기">
+        <div id="pickerList" class="pick-list"></div>
       </div>
-    </form>
-  </dialog>
+
+      <!-- 별점 + 한줄평 -->
+      <div id="reviewEditor" hidden>
+        <div class="review-rating">
+          <span id="reviewStars" class="stars huge"></span>
+          <p id="reviewWord" class="rating-word"></p>
+        </div>
+        <textarea id="reviewInput" maxlength="100" rows="4" placeholder="이 작품을 한 줄로 표현하면?" aria-label="한줄평"></textarea>
+        <div class="review-foot">
+          <label class="spoiler-check"><input type="checkbox" id="reviewSpoiler"> 스포일러가 있어요</label>
+          <span id="reviewCount" class="char-count">0/100</span>
+        </div>
+        <button type="button" id="reviewDelete" class="link danger-link review-delete">한줄평 지우기</button>
+      </div>
+    </div>
+  </section>
 
   <!-- 화면 아래에 잠깐 뜨는 알림 -->
   <div id="toast" class="toast" role="status" hidden></div>
@@ -372,6 +392,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=25"></script>
+  <script src="app.js?v=28"></script>
 </body>
 </html>

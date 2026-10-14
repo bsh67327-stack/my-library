@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 25;
+const APP_VERSION = 28;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -446,7 +446,7 @@ function feedHTML(w) {
         <span class="post-time">${timeAgo(w.updatedAt)}</span>
         <span class="status status-${w.status}">${STATUSES[w.status]}</span>
       </div>
-      <p class="post-text">${esc(w.review)}</p>
+      <p class="post-text${w.reviewSpoiler ? ' is-spoiler' : ''}">${esc(w.review)}</p>
       <div class="post-work">
         ${coverHTML(w, 'thumb')}
         <div class="item-body">
@@ -803,7 +803,10 @@ const SEARCH_SOURCES = {
     fetchInfo: async (item) => {
       const info = await callServer('kakaoWebtoonInfo', String(item.sourceId));
       const share = info.data?.sharingThumbnailImage;
-      return { cover: share ? `${share}.jpg` : '', desc: info.data?.synopsis || '' };
+      // 연재 상태 배지: COMPLETED 완결 / EPISODES_PUBLISHING 연재중 / END_OF_SEASON 시즌 완결
+      const status = (info.data?.badges || []).find((b) => b.type === 'STATUS')?.title;
+      const ongoing = { COMPLETED: '완결', EPISODES_PUBLISHING: '연재중', END_OF_SEASON: '시즌 완결' }[status] || '';
+      return { cover: share ? `${share}.jpg` : '', desc: info.data?.synopsis || '', ongoing };
     },
   },
   // 리디는 검색 요청을 막고 있어서(403) 검색에서 뺌 - 리디 링크는 직접 추가할 수 있음
@@ -1143,7 +1146,7 @@ function groupAsWork(group, info = {}) {
     coverSource: info.cover ? '카카오웹툰' : cover ? SEARCH_SOURCES[cover.source].platform : '',
     platform: [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', '),
     genre: sorted.find((i) => i.genre)?.genre || '',
-    ongoing: sorted.find((i) => i.ongoing)?.ongoing || '', // 연재중 / 완결
+    ongoing: sorted.find((i) => i.ongoing)?.ongoing || info.ongoing || '', // 연재중 / 완결
     desc: descs.sort((a, b) => b.length - a.length)[0] || '',
     tags: info.tags || [],
     links: sorted
@@ -1182,8 +1185,9 @@ async function loadGroupInfo(state) {
   const info = {};
   results.forEach((r) => {
     if (r.status !== 'fulfilled') return;
-    const { cover, desc, tags } = r.value;
+    const { cover, desc, tags, ongoing } = r.value;
     if (cover) info.cover = cover;
+    if (ongoing) info.ongoing = ongoing;
     if (desc && desc.length > (info.desc || '').length) info.desc = desc;
     if (tags?.length) info.tags = tags;
   });
@@ -1270,7 +1274,6 @@ function detailHTML(w, mine) {
 
     ${mine ? `
       <div class="detail-tools">
-        <button type="button" class="link" data-edit>정보 직접 수정</button>
         <button type="button" class="link danger-link" data-remove>서재에서 빼기</button>
       </div>` : ''}
 
@@ -1300,11 +1303,11 @@ function myRecordHTML(w) {
         </button>
       </div>
 
-      <div class="record-row">
-        <span class="record-label">본 회차</span>
+      <div class="record-row progress-row">
+        <span class="record-label">마지막 본 회차</span>
         <div class="stepper">
           <button type="button" data-step="-1" aria-label="한 ${unit} 빼기">−</button>
-          <input type="number" id="detailProgress" min="0" max="99999" inputmode="numeric" value="${w.progress || 0}" aria-label="본 회차">
+          <input type="number" id="detailProgress" min="0" max="99999" inputmode="numeric" value="${w.progress || 0}" aria-label="마지막 본 회차">
           <button type="button" data-step="1" aria-label="한 ${unit} 더하기">+</button>
         </div>
         <span class="record-unit">${unit}</span>
@@ -1420,26 +1423,123 @@ function setSheetRating(value) {
 }
 
 // 별 위의 손가락 위치 → 0.5 ~ 5점
-function ratingAt(clientX) {
-  const rect = $('ratingSheetStars').getBoundingClientRect();
+function ratingAt(starsEl, clientX) {
+  const rect = starsEl.getBoundingClientRect();
   const ratio = (clientX - rect.left) / rect.width;
   return Math.min(5, Math.max(0.5, Math.ceil(ratio * 10) / 2));
 }
 
-// 한줄평 쓰기 창
-function openReview() {
-  const w = works.find((x) => x.id === detailState?.workId);
-  if (!w) return;
-  $('reviewWork').textContent = w.title;
-  $('reviewInput').value = w.review || '';
-  $('reviewDelete').hidden = !w.review;
-  updateReviewCount();
-  $('reviewDialog').showModal();
-  $('reviewInput').focus();
+// 큰 별 위를 누르거나 밀면 onChange(점수)를 부름 (별점 창, 한줄평 쓰기 화면에서 같이 씀)
+function bindStarDrag(starsEl, onChange) {
+  let dragging = false;
+  starsEl.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    starsEl.setPointerCapture(e.pointerId);
+    onChange(ratingAt(starsEl, e.clientX));
+  });
+  starsEl.addEventListener('pointermove', (e) => { if (dragging) onChange(ratingAt(starsEl, e.clientX)); });
+  starsEl.addEventListener('pointerup', () => { dragging = false; });
+  starsEl.addEventListener('pointercancel', () => { dragging = false; });
 }
 
+
+// ----- 6-6. 한줄평 쓰기 화면 (작품 정보의 "한줄평 쓰기" / 피드의 ＋) -----
+// workId: 한줄평을 남길 작품 (피드에서 열면 비어 있어서 먼저 내 서재에서 고름)
+// fixed: 작품 정보 화면에서 열었으면 작품을 바꿀 수 없음
+let reviewState = { workId: null, fixed: false, rating: 0 };
+
+function openReviewPage(workId = null) {
+  reviewState = { workId, fixed: !!workId, rating: 0 };
+  $('pickerQuery').value = '';
+  openOverlay('reviewPage');
+  $('reviewPage').scrollTop = 0;
+  if (workId) {
+    showReviewEditor();
+    $('reviewInput').focus();
+  } else {
+    showPicker();
+  }
+}
+
+// 고른 작품 카드 + 별점 + 한줄평 입력칸
+function showReviewEditor() {
+  const w = works.find((x) => x.id === reviewState.workId);
+  if (!w) { showPicker(); return; }
+  $('reviewPicker').hidden = true;
+  $('reviewEditor').hidden = false;
+  $('reviewWorkBox').innerHTML = `
+    <button type="button" class="review-work" ${reviewState.fixed ? 'disabled' : 'data-change'}>
+      ${coverHTML(w, 'thumb')}
+      <span class="item-body">
+        <span class="kicker">${esc([TYPES[w.type], w.platform].filter(Boolean).join(' · '))}</span>
+        <span class="review-work-title">${esc(w.title)}</span>
+        <span class="author">${esc(w.author || '')}</span>
+      </span>
+      ${reviewState.fixed ? '' : '<span class="review-change">변경</span>'}
+    </button>`;
+  $('reviewInput').value = w.review || '';
+  $('reviewSpoiler').checked = !!w.reviewSpoiler;
+  $('reviewDelete').hidden = !w.review;
+  setReviewRating(w.rating || 0);
+  updateReviewCount();
+}
+
+// 내 서재에서 작품 고르기 (피드에서 열었을 때)
+function showPicker() {
+  $('reviewPicker').hidden = false;
+  $('reviewEditor').hidden = true;
+  $('reviewWorkBox').innerHTML = '';
+  renderPicker();
+  updateReviewCount();
+}
+
+function renderPicker() {
+  const q = $('pickerQuery').value.trim().toLowerCase();
+  const list = [...works]
+    .filter((w) => !q || [w.title, w.author].some((t) => (t || '').toLowerCase().includes(q)))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  $('pickerList').innerHTML = list.length
+    ? list.map((w) => `
+        <button type="button" class="pick-item" data-id="${esc(w.id)}">
+          ${coverHTML(w, 'thumb')}
+          <span class="item-body">
+            <span class="review-work-title">${esc(w.title)}</span>
+            <span class="author">${esc([w.author, TYPES[w.type]].filter(Boolean).join(' · '))}</span>
+          </span>
+          ${w.review ? '<span class="has-review">한줄평 있음</span>' : ''}
+        </button>`).join('')
+    : `<p class="hint">${works.length ? '찾는 작품이 없어요.' : '서재가 비어 있어요. 먼저 작품을 검색해서 담아 주세요.'}</p>`;
+}
+
+function setReviewRating(value) {
+  reviewState.rating = value;
+  $('reviewStars').innerHTML = starsHTML(value);
+  $('reviewWord').innerHTML = value
+    ? `<b>${value.toFixed(1)}</b> ${RATING_WORDS[value]}`
+    : '별점도 함께 남겨 주세요';
+}
+
+// 글자 수 + "등록" 버튼 (작품을 고르고 한 글자라도 써야 누를 수 있음)
 function updateReviewCount() {
-  $('reviewCount').textContent = `${$('reviewInput').value.length}/100`;
+  const text = $('reviewInput').value;
+  $('reviewCount').textContent = `${text.length}/100`;
+  $('reviewSave').disabled = !reviewState.workId || $('reviewEditor').hidden || !text.trim();
+}
+
+async function saveReview() {
+  const id = reviewState.workId;
+  const review = $('reviewInput').value.trim().slice(0, 100);
+  if (!id || !review) return;
+  await updateWork(id, { review, reviewSpoiler: $('reviewSpoiler').checked, rating: reviewState.rating });
+  closeOverlay();
+  toast('한줄평을 남겼어요');
+}
+
+async function deleteReview() {
+  const id = reviewState.workId;
+  if (!id || !confirm('한줄평을 지울까요?')) return;
+  await updateWork(id, { review: '', reviewSpoiler: false });
+  closeOverlay();
 }
 
 // 화면 아래에 잠깐 뜨는 알림
@@ -1452,7 +1552,7 @@ function toast(text) {
 }
 
 
-// ----- 6-6. 전체 화면 창 (검색, 작품 정보) -----
+// ----- 6-7. 전체 화면 창 (검색, 작품 정보, 한줄평 쓰기) -----
 // 열 때마다 방문 기록을 하나 남겨서, 휴대폰의 뒤로 가기로 닫히게 함
 const overlayStack = [];
 
@@ -1533,7 +1633,12 @@ function bindEvents() {
   $('calDayList').addEventListener('click', onCardClick);
   $('readingRow').addEventListener('click', onCardClick);
   $('recentList').addEventListener('click', onCardClick);
-  $('feedList').addEventListener('click', onCardClick);
+  // 피드: 스포일러 한줄평은 한 번 누르면 보이고, 그다음부터는 작품 정보로
+  $('feedList').addEventListener('click', (e) => {
+    const spoiler = e.target.closest('.is-spoiler');
+    if (spoiler) { spoiler.classList.remove('is-spoiler'); return; }
+    onCardClick(e);
+  });
 
   // 추천: 작가 카드는 그 작가 이름으로 검색, 나머지는 작품 정보
   $('recRow').addEventListener('click', (e) => {
@@ -1544,7 +1649,8 @@ function bindEvents() {
 
   // 홈 검색창 / ＋ 버튼: 검색 화면 열기
   $('homeSearch').addEventListener('click', () => openSearch());
-  $('addBtn').addEventListener('click', () => openSearch());
+  // ＋ 버튼: 피드에서는 한줄평 쓰기, 나머지 화면에서는 작품 검색
+  $('addBtn').addEventListener('click', () => (view.mode === 'feed' ? openReviewPage() : openSearch()));
 
   // 검색 화면
   $('searchBack').addEventListener('click', closeOverlay);
@@ -1588,8 +1694,7 @@ function bindEvents() {
     const step = e.target.closest('[data-step]');
     if (step) { updateWork(id, { progress: Math.max(0, (work.progress || 0) + Number(step.dataset.step)) }); return; }
 
-    if (e.target.closest('[data-review]')) openReview();
-    if (e.target.closest('[data-edit]')) openEditor(work);
+    if (e.target.closest('[data-review]')) openReviewPage(id);
     if (e.target.closest('[data-remove]')) removeWork(id);
   });
   // 본 회차 직접 입력: 다 쓰고 나면(엔터나 다른 곳 누르기) 저장
@@ -1608,17 +1713,7 @@ function bindEvents() {
   });
 
   // 별점 창: 누르거나 별 위를 밀면 점수가 바뀜
-  let draggingStars = false;
-  $('ratingSheetStars').addEventListener('pointerdown', (e) => {
-    draggingStars = true;
-    $('ratingSheetStars').setPointerCapture(e.pointerId);
-    setSheetRating(ratingAt(e.clientX));
-  });
-  $('ratingSheetStars').addEventListener('pointermove', (e) => {
-    if (draggingStars) setSheetRating(ratingAt(e.clientX));
-  });
-  $('ratingSheetStars').addEventListener('pointerup', () => { draggingStars = false; });
-  $('ratingSheetStars').addEventListener('pointercancel', () => { draggingStars = false; });
+  bindStarDrag($('ratingSheetStars'), setSheetRating);
   $('ratingSheetCancel').addEventListener('click', () => $('ratingSheet').close());
   $('ratingSheetClear').addEventListener('click', async () => {
     await updateWork(detailState.workId, { rating: 0 });
@@ -1631,21 +1726,26 @@ function bindEvents() {
   });
 
   // 시트 바깥(어두운 부분)을 누르면 닫기
-  ['statusSheet', 'ratingSheet', 'reviewDialog'].forEach((id) => {
+  ['statusSheet', 'ratingSheet'].forEach((id) => {
     $(id).addEventListener('click', (e) => { if (e.target === $(id)) $(id).close(); });
   });
 
-  // 한줄평 쓰기 창
+  // 한줄평 쓰기 화면
+  $('reviewClose').addEventListener('click', closeOverlay);
+  $('reviewSave').addEventListener('click', saveReview);
+  $('reviewDelete').addEventListener('click', deleteReview);
   $('reviewInput').addEventListener('input', updateReviewCount);
-  $('reviewCancel').addEventListener('click', () => $('reviewDialog').close());
-  $('reviewDelete').addEventListener('click', async () => {
-    await updateWork(detailState.workId, { review: '' });
-    $('reviewDialog').close();
+  bindStarDrag($('reviewStars'), setReviewRating);
+  $('pickerQuery').addEventListener('input', renderPicker);
+  $('pickerList').addEventListener('click', (e) => {
+    const item = e.target.closest('[data-id]');
+    if (!item) return;
+    reviewState.workId = item.dataset.id;
+    showReviewEditor();
+    $('reviewInput').focus();
   });
-  $('reviewForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await updateWork(detailState.workId, { review: $('reviewInput').value.trim().slice(0, 100) });
-    $('reviewDialog').close();
+  $('reviewWorkBox').addEventListener('click', (e) => {
+    if (e.target.closest('[data-change]')) showPicker();
   });
 
   // 홈 "전체 보기" / "서재로": 서재 화면으로 이동 (보는 중이면 상태 필터도 같이)
