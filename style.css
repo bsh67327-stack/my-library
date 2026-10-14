@@ -261,7 +261,7 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
   position: relative; overflow: hidden; cursor: pointer;
   width: var(--w); height: var(--h); margin-top: -1px;
   transform: translateX(var(--x)) rotate(var(--r));
-  display: flex; align-items: center; gap: 10px; padding: 0 14px 0 18px;
+  display: flex; align-items: center; gap: 8px; padding: 0 12px 0 16px;
   border-radius: 3px 5px 5px 3px;
   background: var(--c); color: #fff;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.18);
@@ -282,7 +282,7 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
 }
 .spine > span { position: relative; }
 .spine-type { flex: none; font-size: 0.62rem; font-weight: 700; opacity: 0.8; }
-.spine-title { flex: 1; min-width: 0; font-size: 0.9rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+.spine-title { flex: 1; min-width: 0; font-size: 0.86rem; letter-spacing: -0.03em; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
 .spine-rating { flex: none; font-size: 0.72rem; font-weight: 700; opacity: 0.9; }
 
 /* ===== 리스트 ===== */
@@ -507,6 +507,7 @@ label input, label select { color: var(--text); font-weight: 400; }
 form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .progress-input { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .progress-input input { flex: 1; width: 0; max-width: 140px; }
+.progress-input select { flex: none; width: auto; padding-left: 10px; padding-right: 10px; }
 
 .cover-field { display: flex; gap: 14px; align-items: center; }
 .cover-preview {
@@ -813,7 +814,13 @@ dialog button:focus { outline: none; }
 }
 .stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .stepper input:focus { background: var(--surface); }
-.record-unit { font-size: 0.9rem; color: var(--sub); }
+/* 화 / 권 고르기 (작은 두 칸짜리 버튼) */
+.unit-toggle { display: inline-flex; padding: 2px; border-radius: 10px; background: var(--bg); }
+.unit-toggle button {
+  min-width: 30px; padding: 5px 8px; border: none; border-radius: 8px;
+  background: none; color: var(--muted); font-size: 0.86rem; font-weight: 400;
+}
+.unit-toggle button.active { background: var(--accent-soft); color: var(--accent-strong); font-weight: 700; }
 /* 한줄평: 없으면 "한줄평 쓰기" 버튼, 있으면 한줄평 카드 (누르면 수정) */
 .review-btn {
   display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
@@ -895,7 +902,11 @@ dialog button:focus { outline: none; }
 #detailPage .detail-cta .primary { font-weight: 400; }
 #detailPage .detail-sec h3 { font-size: 1rem; font-weight: 700; color: var(--text); }
 /* 마지막 본 회차: 가운데 정렬 */
-#detailPage .progress-row { justify-content: center; }
+#detailPage .progress-row { justify-content: center; gap: 8px; }
+/* 마지막 본 회차 줄: 좁은 폰(360px)에서도 한 줄에 들어가게 조금 좁게 */
+#detailPage .progress-row .stepper button { width: 36px; }
+#detailPage .progress-row .stepper input { width: 56px; }
+#detailPage .progress-row .unit-toggle button { min-width: 26px; padding: 5px 6px; }
 #detailPage .progress-row .record-label { width: auto; }
 #detailPage .record-txt b { font-size: 0.95rem; }
 #detailPage .review-text::before,

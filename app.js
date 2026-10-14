@@ -10,7 +10,7 @@ const fixType = (w) => (w && w.type === 'manga' ? { ...w, type: 'comic' } : w);
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 42;
+const APP_VERSION = 43;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -274,8 +274,8 @@ function hashOf(text) {
 function spineHTML(w) {
   const h = hashOf(w.id);
   const thick = 36 + Math.min(22, Math.round(Math.log2((w.progress || 0) + 1) * 2.2));
-  const width = 74 + (h % 23);              // 74~96%
-  const shift = ((h >> 5) % 17) - 8;        // 왼쪽/오른쪽으로 -8~8px
+  const width = 86 + (h % 13);              // 86~98% (제목 10자는 잘리지 않게)
+  const shift = ((h >> 5) % 11) - 5;        // 왼쪽/오른쪽으로 -5~5px
   const tilt = (((h >> 9) % 9) - 4) / 10;   // -0.4~0.4도
   return `
     <article class="card spine" data-id="${esc(w.id)}"
@@ -284,25 +284,6 @@ function spineHTML(w) {
       <span class="spine-type">${TYPES[w.type]}</span>
       <span class="spine-title">${esc(w.title)}</span>
       ${w.rating ? `<span class="spine-rating">★ ${w.rating.toFixed(1)}</span>` : ''}
-    </article>`;
-}
-
-// 홈 "보는 중" 가로 목록의 작품 하나
-function miniHTML(w) {
-  const unit = unitOf(w.type, w.unit);
-  const seen = w.progress || 0;
-  return `
-    <article class="card mini" data-id="${esc(w.id)}">
-      <div class="mini-cover">
-        ${coverHTML(w, 'cover')}
-        ${badgesHTML(w)}
-      </div>
-      <h3>${esc(w.title)}</h3>
-      ${w.latest ? `<span class="bar"><i style="width:${Math.min(100, (seen / w.latest) * 100)}%"></i></span>` : ''}
-      <div class="mini-foot">
-        <span>${seen}${w.latest ? ` / ${w.latest}` : ''}${unit}</span>
-        <button type="button" class="plus-btn" data-id="${esc(w.id)}">+1</button>
-      </div>
     </article>`;
 }
 
@@ -346,21 +327,13 @@ function progressHTML(w) {
     </div>`;
 }
 
-// 홈: 보는 중인 작품(가로 목록) + 추천 + 최근에 기록한 작품 5개
+// 홈 "내 서재": 기록한 작품을 책등처럼 쌓아서 (맨 위가 가장 최근, 너무 길어지지 않게 30권까지)
+const SHELF_MAX = 30;
 function renderHome() {
   const byUpdated = [...works].sort((a, b) => b.updatedAt - a.updatedAt);
-  const reading = byUpdated.filter((w) => w.status === 'reading');
-  $('readingCount').textContent = reading.length || '';
-  $('readingRow').innerHTML = reading.length
-    ? reading.map(miniHTML).join('')
-    : '<p class="hint">보는 중인 작품이 없어요.</p>';
-  const recs = recommendations();
-  $('recName').textContent = displayName();
-  $('recSection').hidden = recs.length === 0;
-  $('recRow').innerHTML = recs.map(recHTML).join('');
-  // 최근 기록: 최근에 기록한 작품 8개를 책등처럼 쌓아서 (맨 위가 가장 최근)
+  $('shelfCount').textContent = works.length || '';
   $('recentList').innerHTML = works.length
-    ? `<div class="stack">${byUpdated.slice(0, 8).map(spineHTML).join('')}</div>`
+    ? `<div class="stack">${byUpdated.slice(0, SHELF_MAX).map(spineHTML).join('')}</div>`
     : '<p class="hint">아직 기록한 작품이 없어요.<br>위 검색창에서 첫 작품을 추가해 보세요!</p>';
 }
 
@@ -381,53 +354,6 @@ const displayName = () => nicknameNow || '독자';
 function renderSettings() {
   $('nickInput').value = nicknameNow;
   $('settingsVersion').textContent = `v${APP_VERSION}`;
-}
-
-// 홈 "OO님을 위한 추천 작품": 내 서재 기록만으로 고른 추천 (밖으로 요청을 보내지 않음)
-const DAY = 24 * 60 * 60 * 1000;
-
-function recommendations() {
-  const recs = [];
-  const oldestFirst = (a, b) => a.updatedAt - b.updatedAt;
-
-  // (1) 평점을 높게 준 작품의 작가 → 누르면 그 작가 이름으로 플랫폼 검색 (작가당 한 번, 최대 3명)
-  const authors = new Set();
-  works.filter((w) => w.rating >= 4.5 && w.author)
-    .sort((a, b) => b.rating - a.rating || b.updatedAt - a.updatedAt)
-    .forEach((w) => {
-      const name = w.author.split(/[,/·]/)[0].trim();
-      if (!name || authors.has(name) || authors.size >= 3) return;
-      authors.add(name);
-      recs.push({ w, reason: `재밌게 본 「${w.title}」 작가`, author: name });
-    });
-
-  // (2) 보류해 둔 작품, (3) 2주 넘게 기록이 없는 보는 중 작품, (4) 한 달 넘게 안 연 인생작(4.5점 이상 완독)
-  const picks = [
-    [(w) => w.status === 'paused', '보류했던 작품, 다시 볼까요?', 3],
-    [(w) => w.status === 'reading' && Date.now() - w.updatedAt > 14 * DAY, '요즘 안 보셨어요', 2],
-    [(w) => w.status === 'done' && w.rating >= 4.5 && Date.now() - w.updatedAt > 30 * DAY, '인생작 다시 보기', 2],
-  ];
-  const used = new Set();
-  for (const [match, reason, max] of picks) {
-    works.filter((w) => match(w) && !used.has(w.id)).sort(oldestFirst).slice(0, max).forEach((w) => {
-      used.add(w.id);
-      recs.push({ w, reason });
-    });
-  }
-  return recs;
-}
-
-function recHTML({ w, reason, author }) {
-  const target = author ? `class="rec" data-author="${esc(author)}"` : `class="card rec" data-id="${esc(w.id)}"`;
-  return `
-    <article ${target}>
-      <div class="mini-cover">
-        ${coverHTML(w, 'cover')}
-        ${author ? '<span class="rec-search">찾아보기</span>' : ''}
-      </div>
-      <p class="rec-reason">${esc(reason)}</p>
-      <h3>${esc(author ? `${author} 작가의 다른 작품` : w.title)}</h3>
-    </article>`;
 }
 
 // 피드: 한줄평을 남긴 작품을 최근 순으로 (나중에 다른 사람 한줄평도 이 모양으로)
@@ -549,7 +475,7 @@ function setViewMode(mode) {
   $('feedView').hidden = mode !== 'feed';
   $('calendarView').hidden = mode !== 'calendar';
   $('settingsView').hidden = mode !== 'settings';
-  $('addBtn').hidden = mode === 'settings'; // 설정 화면에는 ＋ 버튼이 필요 없음
+  $('addBtn').hidden = mode === 'settings' || mode === 'home'; // 홈(검색창이 있음)·설정에는 ＋ 버튼이 필요 없음
   if (mode === 'settings') renderSettings();
   if (mode === 'calendar') {
     // 오늘 추가한 작품이 있으면 오늘을 선택해서 보여줌
@@ -579,7 +505,9 @@ function openEditor(work) {
   formLinks = work ? workLinks(work).map((l) => ({ ...l })) : [];
   renderLinkList();
   formLink = work?.source ? { source: work.source, sourceId: work.sourceId, unit: work.unit } : null;
-  updateProgressUnit();
+  // 저장된 단위가 있으면 그대로, 없으면 종류에 맞춰
+  $('f-unit').value = unitOf($('f-type').value, work?.unit || formLink?.unit);
+  unitPicked = !!work?.unit;
   $('f-started').value = work?.startedAt || '';
   $('f-finished').value = work?.finishedAt || '';
   $('coverUrl').value = work?.cover && !work.cover.startsWith('data:') ? work.cover : '';
@@ -635,7 +563,7 @@ async function handleSubmit(e) {
     // 플랫폼 연결 정보 (검색으로 추가한 작품만)
     source: formLink?.source || '',
     sourceId: formLink?.sourceId || '',
-    unit: formLink?.unit || '',
+    unit: $('f-unit').value, // 화(연재본) / 권(단행본)
   };
   if (!work.title) return;
 
@@ -1265,8 +1193,10 @@ function runFinder() {
 
 
 // "어디까지 봤나요?" 칸 옆의 단위(화/권) 표시
+// 직접 고르기 전에는 종류에 맞춰 바뀜 (만화는 권, 나머지는 화)
+let unitPicked = false;
 function updateProgressUnit() {
-  $('progressUnit').textContent = unitOf($('f-type').value, formLink?.unit);
+  if (!unitPicked) $('f-unit').value = unitOf($('f-type').value, formLink?.unit);
 }
 
 
@@ -1666,7 +1596,10 @@ function myRecordHTML(w) {
           <input type="number" id="detailProgress" min="0" max="99999" inputmode="numeric" value="${w.progress || 0}" aria-label="마지막 본 회차">
           <button type="button" data-step="1" aria-label="한 ${unit} 더하기">+</button>
         </div>
-        <span class="record-unit">${unit}</span>
+        <!-- 연재본은 화, 단행본은 권 (누르면 바로 저장) -->
+        <span class="unit-toggle" role="group" aria-label="회차 단위">
+          ${['화', '권'].map((u) => `<button type="button" data-unit="${u}" class="${unit === u ? 'active' : ''}">${u}</button>`).join('')}
+        </span>
       </div>
 
       ${w.review
@@ -2035,20 +1968,12 @@ function bindEvents() {
   };
   $('grid').addEventListener('click', onCardClick);
   $('calDayList').addEventListener('click', onCardClick);
-  $('readingRow').addEventListener('click', onCardClick);
   $('recentList').addEventListener('click', onCardClick);
   // 피드: 스포일러 한줄평은 한 번 누르면 보이고, 그다음부터는 작품 정보로
   $('feedList').addEventListener('click', (e) => {
     const spoiler = e.target.closest('.is-spoiler');
     if (spoiler) { spoiler.classList.remove('is-spoiler'); return; }
     onCardClick(e);
-  });
-
-  // 추천: 작가 카드는 그 작가 이름으로 검색, 나머지는 작품 정보
-  $('recRow').addEventListener('click', (e) => {
-    const rec = e.target.closest('[data-author]');
-    if (rec) openSearch(rec.dataset.author);
-    else onCardClick(e);
   });
 
   // 홈 검색창 / ＋ 버튼: 검색 화면 열기
@@ -2125,6 +2050,9 @@ function bindEvents() {
     if (e.target.closest('[data-open-status]')) { openStatusSheet(); return; }
     if (e.target.closest('[data-open-rating]')) { openRating(); return; }
 
+    const unitBtn = e.target.closest('[data-unit]');
+    if (unitBtn) { if (unitOf(work.type, work.unit) !== unitBtn.dataset.unit) updateWork(id, { unit: unitBtn.dataset.unit }); return; }
+
     const step = e.target.closest('[data-step]');
     if (step) { updateWork(id, { progress: Math.max(0, (work.progress || 0) + Number(step.dataset.step)) }); return; }
 
@@ -2188,9 +2116,9 @@ function bindEvents() {
     if (e.target.closest('[data-change]')) showPicker();
   });
 
-  // 홈 "전체 보기" / "서재로": 서재 화면으로 이동 (보는 중이면 상태 필터도 같이)
+  // 홈 "전체 보기": 서재 화면으로 이동
   document.querySelectorAll('.sec-head .more').forEach((btn) => btn.addEventListener('click', () => {
-    view.status = btn.dataset.go === 'reading' ? 'reading' : 'all';
+    view.status = 'all';
     $('statusFilter').value = view.status;
     render();
     setViewMode('library');
@@ -2235,6 +2163,7 @@ function bindEvents() {
   // 입력 창
   $('workForm').addEventListener('submit', handleSubmit);
   $('f-type').addEventListener('change', updateProgressUnit);
+  $('f-unit').addEventListener('change', () => { unitPicked = true; });
   // 보러 갈 곳: 주소 직접 추가 (엔터를 눌러도 저장되지 않고 추가되도록) / 삭제
   $('f-url-add').addEventListener('click', addManualLink);
   $('f-url').addEventListener('keydown', (e) => {
