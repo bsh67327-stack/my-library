@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 28;
+const APP_VERSION = 32;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -714,6 +714,16 @@ const seriesSource = (kind) => ({
   format: 'html',
   parse: (html) => parseSeries(html, kind),
   hasMore: (html, page, items) => items.length >= 25, // 한 페이지에 25개씩
+  // 장르는 검색 결과에 없어서 작품 페이지에서 꺼내 옴 (검색 서버가 장르·연재 상태·소개만 보내 줌)
+  fetchInfo: async (item) => {
+    const data = await callServer('seriesInfo', `${kind}/${item.sourceId}`);
+    return {
+      genre: data.genre || '',
+      ongoing: /미완결|연재/.test(data.ongoing || '') ? '연재중' : /완결/.test(data.ongoing || '') ? '완결' : '',
+      desc: data.desc || '',
+      tags: data.tags || [],
+    };
+  },
 });
 
 // 미스터블루: 검색 결과 웹페이지에서 작품 정보를 꺼냄
@@ -760,6 +770,17 @@ const naverSource = (platform) => ({
     ongoing: w.finished ? '완결' : '연재중',
   })),
   hasMore: (data, page) => page + 1 < (data.pageInfo?.totalPages || 0),
+  // 장르와 태그는 검색 결과에 없어서 작품 정보에서 불러옴 (GENRE_로 시작하는 태그가 장르)
+  fetchInfo: async (item) => {
+    const data = await callServer('naverInfo', String(item.sourceId));
+    const tags = data.curationTagList || [];
+    return {
+      genre: tags.find((t) => /^GENRE_/.test(t.curationType))?.tagName || '',
+      tags: tags.filter((t) => !/^GENRE_/.test(t.curationType)).map((t) => t.tagName).filter(Boolean).slice(0, 10),
+      ongoing: data.finished ? '완결' : '연재중',
+      desc: data.synopsis || '',
+    };
+  },
 });
 
 const SEARCH_SOURCES = {
@@ -779,7 +800,7 @@ const SEARCH_SOURCES = {
       try { path = new URL(item.url).pathname.slice(1); } catch { return {}; }
       if (!/^(novel|comic|webtoon)\/[A-Za-z0-9]+$/.test(path)) return {};
       const data = await callServer('mrblueInfo', path);
-      return { desc: data.desc || '' };
+      return { desc: data.desc || '', tags: data.tags || [] };
     },
   },
   kakaoWebtoon: {
@@ -799,14 +820,21 @@ const SEARCH_SOURCES = {
       desc: c.catchphraseThreeLines || c.catchphraseTwoLines || '', // 짧은 소개 (전체 소개는 fetchInfo로)
     })),
     hasMore: (data) => data.meta?.pagination ? !data.meta.pagination.last : false,
-    // 작품 정보 화면을 열면 대표 이미지와 전체 작품 소개를 불러옴
+    // 작품 정보 화면을 열면 대표 이미지·전체 작품 소개·연재 상태와, 프로필의 키워드(태그로 씀)를 불러옴
     fetchInfo: async (item) => {
-      const info = await callServer('kakaoWebtoonInfo', String(item.sourceId));
+      const id = String(item.sourceId);
+      const [info, profile] = await Promise.all([
+        callServer('kakaoWebtoonInfo', id),
+        callServer('kakaoWebtoonProfile', id).catch(() => ({})), // 키워드를 못 받아도 나머지는 보여줌
+      ]);
       const share = info.data?.sharingThumbnailImage;
       // 연재 상태 배지: COMPLETED 완결 / EPISODES_PUBLISHING 연재중 / END_OF_SEASON 시즌 완결
       const status = (info.data?.badges || []).find((b) => b.type === 'STATUS')?.title;
       const ongoing = { COMPLETED: '완결', EPISODES_PUBLISHING: '연재중', END_OF_SEASON: '시즌 완결' }[status] || '';
-      return { cover: share ? `${share}.jpg` : '', desc: info.data?.synopsis || '', ongoing };
+      const genre = typeof info.data?.genre === 'string' ? info.data.genre : '';
+      // 키워드에 장르(예: #판타지 드라마)가 같이 들어 있어서 장르는 빼고 태그로
+      const tags = (profile.keywords || []).filter((k) => k !== genre).slice(0, 10);
+      return { cover: share ? `${share}.jpg` : '', desc: info.data?.synopsis || '', ongoing, genre, tags };
     },
   },
   // 리디는 검색 요청을 막고 있어서(403) 검색에서 뺌 - 리디 링크는 직접 추가할 수 있음
@@ -830,6 +858,7 @@ const SEARCH_SOURCES = {
       return {
         desc: data.result?.description || '',
         tags: (data.result?.theme_keyword_list || []).map((k) => k.title).filter(Boolean).slice(0, 10),
+        genre: data.result?.detail?.category_list?.[1] || '', // 예: ["웹소설", "로판"]
       };
     },
     hasMore: (data) => data.result ? !data.result.is_end : false,
@@ -1131,7 +1160,14 @@ function findInLibrary(group) {
   return works.find((w) => titleKey(w.title) === titleKey(main.title) && w.type === main.type);
 }
 
+// 연재 상태 합치기: 플랫폼마다 반영이 늦을 수 있어서 한 곳이라도 완결이면 완결
+function mergeOngoing(values) {
+  const list = values.filter(Boolean);
+  return ['완결', '시즌 완결', '연재중'].find((v) => list.includes(v)) || '';
+}
+
 // 검색 결과 묶음을 작품 모양으로 (플랫폼 순서상 앞에 있는 것부터 씀)
+// info: 정보 화면을 열 때 더 불러온 { cover, desc, genre, tags, ongoing }
 function groupAsWork(group, info = {}) {
   const main = mainItem(group);
   const cover = coverItem(group);
@@ -1145,8 +1181,8 @@ function groupAsWork(group, info = {}) {
     cover: info.cover || cover?.cover || '',
     coverSource: info.cover ? '카카오웹툰' : cover ? SEARCH_SOURCES[cover.source].platform : '',
     platform: [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', '),
-    genre: sorted.find((i) => i.genre)?.genre || '',
-    ongoing: sorted.find((i) => i.ongoing)?.ongoing || info.ongoing || '', // 연재중 / 완결
+    genre: info.genre || sorted.find((i) => i.genre)?.genre || '',
+    ongoing: mergeOngoing([...sorted.map((i) => i.ongoing), info.ongoing]), // 연재중 / 완결
     desc: descs.sort((a, b) => b.length - a.length)[0] || '',
     tags: info.tags || [],
     links: sorted
@@ -1160,6 +1196,7 @@ function groupAsWork(group, info = {}) {
 
 function openDetail(state) {
   detailState = state;
+  lastHero = ''; // 다른 작품이니 표지를 새로 그림
   renderDetail();
   openOverlay('detailPage');
   $('detailPage').scrollTop = 0;
@@ -1168,75 +1205,83 @@ function openDetail(state) {
   else fillMissingInfo(works.find((w) => w.id === state.workId));
 }
 
-// 검색 결과의 작품 정보 더 불러오기 (이 화면을 열 때 한 번만, 필요한 곳에만 요청)
-// - 카카오웹툰: 대표 이미지 + 전체 소개
-// - 소개가 없으면: 카카오페이지(소개 + 태그) 또는 미스터블루(소개) 중 하나
+// 장르·태그·연재 상태·소개를 가져올 대표 플랫폼 (앞에 있을수록 먼저, 카카오웹툰은 태그가 없어서 맨 뒤)
+const INFO_SOURCES = ['naverWebtoon', 'kakao', 'seriesNovel', 'seriesComic', 'mrblue', 'naverBest', 'naverChallenge', 'kakaoWebtoon'];
+
+// 플랫폼 정보 여러 개를 하나로 합침
+function mergeInfo(results) {
+  const info = {};
+  for (const r of results) {
+    if (!r) continue;
+    if (r.cover) info.cover = r.cover;
+    if (r.genre && !info.genre) info.genre = r.genre;
+    if (r.tags?.length && !info.tags?.length) info.tags = r.tags;
+    if (r.desc && r.desc.length > (info.desc || '').length) info.desc = r.desc;
+    info.ongoing = mergeOngoing([info.ongoing, r.ongoing]);
+  }
+  return info;
+}
+
+// 검색 결과의 작품 정보 더 불러오기 (정보 화면을 열 때 한 번만)
+// - 대표 플랫폼 한 곳: 장르·태그·연재 상태·소개
+// - 카카오웹툰이 있으면 같이: 대표 이미지 + 전체 소개 + 연재 상태
 async function loadGroupInfo(state) {
   const items = state.group.items;
-  const hasDesc = items.some((i) => i.desc && i.source !== 'kakaoWebtoon'); // 카카오웹툰 검색 소개는 짧은 문구라 제외
-  const targets = [
-    items.find((i) => i.source === 'kakaoWebtoon'),
-    hasDesc ? null : items.find((i) => i.source === 'kakao') || items.find((i) => i.source === 'mrblue'),
-  ].filter(Boolean);
+  const main = INFO_SOURCES.map((s) => items.find((i) => i.source === s)).find(Boolean);
+  const kw = items.find((i) => i.source === 'kakaoWebtoon');
+  const targets = [...new Set([main, kw].filter(Boolean))];
   if (!targets.length) return;
 
   const results = await Promise.allSettled(targets.map((i) => SEARCH_SOURCES[i.source].fetchInfo(i)));
   if (detailState !== state) return; // 그사이 화면을 닫았으면 무시
-  const info = {};
-  results.forEach((r) => {
-    if (r.status !== 'fulfilled') return;
-    const { cover, desc, tags, ongoing } = r.value;
-    if (cover) info.cover = cover;
-    if (ongoing) info.ongoing = ongoing;
-    if (desc && desc.length > (info.desc || '').length) info.desc = desc;
-    if (tags?.length) info.tags = tags;
-  });
-  state.info = info;
+  state.info = mergeInfo(results.map((r) => (r.status === 'fulfilled' ? r.value : null)));
   renderDetail();
 }
 
-// 내 서재 작품에 작품 소개가 없으면 (예전에 담은 작품) 한 번 찾아서 채워 넣음
+// 내 서재 작품에 장르·태그·연재 상태·소개가 비어 있으면 (예전에 담은 작품) 한 번 불러와서 채워 넣음
 const infoTried = new Set();
 async function fillMissingInfo(w) {
-  if (!w || w.desc || !w.source || infoTried.has(w.id)) return;
+  if (!w || !w.source || infoTried.has(w.id)) return;
+  if (w.desc && w.genre && w.ongoing && w.tags?.length) return;
   infoTried.add(w.id);
   const src = SEARCH_SOURCES[w.source];
-  if (!src) return;
+  if (!src?.fetchInfo) return;
   try {
-    let found;
-    if (src.fetchInfo) {
-      const mrblueUrl = workLinks(w).find((l) => /mrblue\.com/.test(l.url))?.url;
-      found = await src.fetchInfo({ sourceId: w.sourceId, url: mrblueUrl });
-    } else {
-      // 네이버웹툰·시리즈는 작품 정보 주소가 따로 없어서 제목으로 다시 검색해서 같은 작품을 찾음
-      const { items } = await fetchSearch(w.source, w.title);
-      found = items.find((i) => String(i.sourceId) === String(w.sourceId));
-    }
-    if (!found?.desc) return;
-    // 소개만 채우는 거라 '최근 수정' 순서는 그대로 둠
+    const mrblueUrl = workLinks(w).find((l) => /mrblue\.com/.test(l.url))?.url;
+    const found = mergeInfo([await src.fetchInfo({ sourceId: w.sourceId, url: mrblueUrl })]);
+    const now = works.find((x) => x.id === w.id);
+    if (!now) return;
+    // 빈 칸만 채움 ('최근 수정' 순서는 그대로 둠)
     const work = {
-      ...works.find((x) => x.id === w.id),
-      desc: found.desc,
-      genre: w.genre || found.genre || '',
-      ongoing: w.ongoing || found.ongoing || '',
+      ...now,
+      desc: now.desc || found.desc || '',
+      genre: now.genre || found.genre || '',
+      ongoing: found.ongoing || now.ongoing || '',
+      tags: now.tags?.length ? now.tags : (found.tags || []),
     };
-    if (found.tags?.length) work.tags = found.tags;
     await saveOne(work);
     works = works.map((x) => (x.id === w.id ? work : x));
     if (detailState?.workId === w.id) renderDetail();
-  } catch { /* 못 불러와도 소개 칸만 비어 있음 */ }
+  } catch { /* 못 불러와도 그 칸만 비어 있음 */ }
 }
 
+// 작품 정보 화면 그리기
+// 표지 부분은 바뀔 때만 다시 그림 (+1 / 별점을 누를 때마다 표지가 깜빡이지 않게)
+let lastHero = '';
 function renderDetail() {
   if (!detailState) return;
   const mine = detailState.workId ? works.find((w) => w.id === detailState.workId) : null;
   if (detailState.workId && !mine) return;
   const w = mine || groupAsWork(detailState.group, detailState.info);
+  const hero = heroHTML(w);
+  if (hero !== lastHero) {
+    $('detailHero').innerHTML = hero;
+    lastHero = hero;
+  }
   $('detailBody').innerHTML = detailHTML(w, mine);
 }
 
-function detailHTML(w, mine) {
-  const links = workLinks(w);
+function heroHTML(w) {
   // 표지 출처: 플랫폼에서 가져온 표지만 표시 (직접 고른 사진은 표시 안 함)
   const source = w.coverSource || (w.cover && !w.cover.startsWith('data:') && SEARCH_SOURCES[w.source]?.platform) || '';
   return `
@@ -1244,8 +1289,13 @@ function detailHTML(w, mine) {
       ${w.cover ? `<img class="hero-bg" src="${esc(w.cover)}" alt="" onerror="this.remove()">` : ''}
       <div class="hero-cover">${coverHTML(w, 'cover')}</div>
       ${source ? `<span class="cover-source">이미지 출처 · ${esc(source)}</span>` : ''}
-    </div>
+    </div>`;
+}
 
+// 표지 아래 부분 (작품명·내 기록·소개·보러 가기)
+function detailHTML(w, mine) {
+  const links = workLinks(w);
+  return `
     <div class="detail-info">
       <p class="kicker">${esc([TYPES[w.type], w.platform].filter(Boolean).join(' · '))}</p>
       <h2 class="detail-title">${esc(w.title)}</h2>
@@ -1258,12 +1308,17 @@ function detailHTML(w, mine) {
       <div class="detail-sec">
         <h3>작품 소개</h3>
         <p class="detail-desc">${esc(w.desc)}</p>
-        ${w.tags?.length ? `<div class="tag-list">${w.tags.map((t) => `<span class="tag">#${esc(t)}</span>`).join('')}</div>` : ''}
+      </div>` : ''}
+
+    ${w.tags?.length ? `
+      <div class="detail-sec">
+        <h3>키워드</h3>
+        <div class="tag-list">${w.tags.map((t) => `<span class="tag">#${esc(t)}</span>`).join('')}</div>
       </div>` : ''}
 
     ${links.length ? `
       <div class="detail-sec">
-        <h3>작품 보러 가기</h3>
+        <h3>보러 가기</h3>
         <div class="pf-buttons">
           ${links.map((l) => `
             <a class="pf-btn go-link" href="${esc(l.url)}" target="_blank" rel="noopener">
@@ -1453,9 +1508,9 @@ function openReviewPage(workId = null) {
   $('pickerQuery').value = '';
   openOverlay('reviewPage');
   $('reviewPage').scrollTop = 0;
+  // 키보드는 입력칸을 직접 눌렀을 때만 올라오게 (열자마자 올라오면 화면이 밀림)
   if (workId) {
     showReviewEditor();
-    $('reviewInput').focus();
   } else {
     showPicker();
   }
@@ -1560,7 +1615,7 @@ function openOverlay(id) {
   if (overlayStack[overlayStack.length - 1] === id) return;
   $(id).hidden = false;
   overlayStack.push(id);
-  document.body.classList.add('overlay-open');
+  lockPage(true);
   history.pushState({ overlay: id }, '');
 }
 
@@ -1572,7 +1627,43 @@ window.addEventListener('popstate', () => {
   const id = overlayStack.pop();
   if (id) $(id).hidden = true;
   if (id === 'detailPage') detailState = null;
-  document.body.classList.toggle('overlay-open', overlayStack.length > 0);
+  if (!overlayStack.length) lockPage(false);
+});
+
+// 전체 화면 창이 열려 있는 동안 뒤의 화면을 고정 (아이폰은 키보드가 올라올 때 뒤 화면까지 밀어 올려서)
+let lockedScrollY = 0;
+function lockPage(lock) {
+  const locked = document.body.classList.contains('overlay-open');
+  if (lock === locked) return;
+  if (lock) {
+    lockedScrollY = window.scrollY;
+    document.body.style.top = `-${lockedScrollY}px`;
+    document.body.classList.add('overlay-open');
+  } else {
+    document.body.classList.remove('overlay-open');
+    document.body.style.top = '';
+    window.scrollTo(0, lockedScrollY);
+  }
+}
+
+// 키보드가 올라오면 화면에 실제로 보이는 영역(visualViewport)이 줄어듦
+// → 그 크기와 위치를 CSS 변수로 넘겨서, 전체 화면 창과 아래에서 올라오는 창을 키보드 위 영역에 맞춤
+function syncViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const root = document.documentElement.style;
+  root.setProperty('--vv-height', `${vv.height}px`);
+  root.setProperty('--vv-top', `${vv.offsetTop}px`);
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncViewport);
+  window.visualViewport.addEventListener('scroll', syncViewport);
+  syncViewport();
+}
+
+// 아이폰은 user-scalable=no 를 무시하고 두 손가락 확대를 허용해서, 확대 동작 자체를 막음
+['gesturestart', 'gesturechange'].forEach((type) => {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
 });
 
 
@@ -1740,9 +1831,9 @@ function bindEvents() {
   $('pickerList').addEventListener('click', (e) => {
     const item = e.target.closest('[data-id]');
     if (!item) return;
+    $('pickerQuery').blur(); // 작품을 고르면 키보드 내리기
     reviewState.workId = item.dataset.id;
     showReviewEditor();
-    $('reviewInput').focus();
   });
   $('reviewWorkBox').addEventListener('click', (e) => {
     if (e.target.closest('[data-change]')) showPicker();

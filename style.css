@@ -40,6 +40,8 @@
 * { box-sizing: border-box; }
 /* hidden 속성이 붙은 요소는 display 설정과 상관없이 항상 숨김 */
 [hidden] { display: none !important; }
+/* 버튼을 빠르게 두 번 눌러도 화면이 확대되지 않게 (두 번 탭 확대 끄기) */
+html { touch-action: manipulation; }
 body {
   margin: 0;
   font-family: "Pretendard Variable", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
@@ -503,10 +505,13 @@ form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   padding: 7px 14px; border-radius: 999px; cursor: pointer;
 }
 
-/* ===== 전체 화면 창 (검색, 작품 정보) ===== */
-body.overlay-open { overflow: hidden; }
+/* ===== 전체 화면 창 (검색, 작품 정보, 한줄평 쓰기) ===== */
+/* 창이 열려 있는 동안 뒤 화면 고정 (top 은 app.js 가 스크롤 위치만큼 넣어 줌) */
+body.overlay-open { position: fixed; left: 0; right: 0; overflow: hidden; }
+/* 키보드가 올라와도 실제로 보이는 영역(--vv-top, --vv-height)에 맞춰서, 위쪽 바가 밀려 올라가지 않게 함 */
 .overlay {
-  position: fixed; inset: 0; z-index: 30;
+  position: fixed; left: 0; right: 0; z-index: 30;
+  top: var(--vv-top, 0px); height: var(--vv-height, 100%);
   overflow-y: auto; overscroll-behavior: contain;
   background: var(--bg);
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
@@ -637,7 +642,7 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 .detail-sec .wide { margin-top: 18px; }
 .detail-note { margin: 22px 20px 0; font-size: 0.72rem; color: var(--muted); text-align: center; line-height: 1.5; }
 .detail-desc { font-size: 0.92rem; line-height: 1.7; color: var(--sub); white-space: pre-line; word-break: keep-all; }
-.tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag { padding: 5px 10px; border-radius: 8px; background: var(--surface-2); font-size: 0.8rem; color: var(--sub); }
 .detail-tools { display: flex; justify-content: center; gap: 18px; margin-top: 26px; }
 .danger-link { color: var(--danger); }
@@ -786,7 +791,7 @@ dialog button:focus { outline: none; }
   font-size: 0.82rem; color: var(--sub); text-shadow: none;
 }
 
-/* 작품 정보 화면: 작품명과 섹션 제목(작품 소개 / 작품 보러 가기) 말고는 굵은 글씨를 쓰지 않음 */
+/* 작품 정보 화면: 작품명과 섹션 제목(작품 소개 / 키워드 / 보러 가기) 말고는 굵은 글씨를 쓰지 않음 */
 #detailPage .kicker,
 #detailPage .record-txt b,
 #detailPage .record-label,
@@ -826,9 +831,13 @@ dialog button:focus { outline: none; }
   form .row { grid-template-columns: 1fr; }
 
   /* 작품 추가/수정 창: 휴대폰에서는 아래에서 올라오는 시트 */
+  /* 키보드가 올라오면 키보드 바로 위에 붙음 (보이는 영역의 아래 끝에 맞춤) */
   dialog, dialog.small-dialog {
-    width: 100%; max-width: 100%; max-height: 92dvh;
-    margin: auto 0 0; border-radius: 22px 22px 0 0;
+    width: 100%; max-width: 100%;
+    max-height: calc(var(--vv-height, 100%) - 16px);
+    margin: 0; top: auto;
+    bottom: calc(100% - var(--vv-top, 0px) - var(--vv-height, 100%));
+    border-radius: 22px 22px 0 0;
   }
   dialog[open] { animation: sheet 0.25s ease-out; }
   @keyframes sheet { from { transform: translateY(100%); } }
