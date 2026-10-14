@@ -7,7 +7,7 @@ const TYPES = { webtoon: '웹툰', webnovel: '웹소설', comic: '만화책', ma
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -770,6 +770,14 @@ const SEARCH_SOURCES = {
     format: 'html',
     parse: parseMrblue,
     hasMore: (html, page, items) => items.length >= 120, // 한 페이지에 120개씩
+    // 작품 소개는 검색 결과에 없어서 작품 페이지에서 꺼내 옴 (검색 서버가 소개 글만 보내 줌)
+    fetchInfo: async (item) => {
+      let path = '';
+      try { path = new URL(item.url).pathname.slice(1); } catch { return {}; }
+      if (!/^(novel|comic|webtoon)\/[A-Za-z0-9]+$/.test(path)) return {};
+      const data = await callServer('mrblueInfo', path);
+      return { desc: data.desc || '' };
+    },
   },
   kakaoWebtoon: {
     platform: '카카오웹툰',
@@ -789,8 +797,8 @@ const SEARCH_SOURCES = {
     })),
     hasMore: (data) => data.meta?.pagination ? !data.meta.pagination.last : false,
     // 작품 정보 화면을 열면 대표 이미지와 전체 작품 소개를 불러옴
-    fetchInfo: async (id) => {
-      const info = await callServer('kakaoWebtoonInfo', String(id));
+    fetchInfo: async (item) => {
+      const info = await callServer('kakaoWebtoonInfo', String(item.sourceId));
       const share = info.data?.sharingThumbnailImage;
       return { cover: share ? `${share}.jpg` : '', desc: info.data?.synopsis || '' };
     },
@@ -808,6 +816,14 @@ const SEARCH_SOURCES = {
       note: s.category || '',
       genre: s.sub_category || '',
     })),
+    // 작품 소개와 태그는 검색 결과에 없어서 작품 정보에서 불러옴
+    fetchInfo: async (item) => {
+      const data = await callServer('kakaoAbout', String(item.sourceId));
+      return {
+        desc: data.result?.description || '',
+        tags: (data.result?.theme_keyword_list || []).map((k) => k.title).filter(Boolean).slice(0, 10),
+      };
+    },
     hasMore: (data) => data.result ? !data.result.is_end : false,
   },
 };
@@ -1104,6 +1120,7 @@ function groupAsWork(group, info = {}) {
     platform: [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', '),
     genre: sorted.find((i) => i.genre)?.genre || '',
     desc: descs.sort((a, b) => b.length - a.length)[0] || '',
+    tags: info.tags || [],
     links: sorted
       .map((i) => ({ name: SEARCH_SOURCES[i.source].platform, url: safeUrl(i.url || linkOf(i.source, i.sourceId)) }))
       .filter((l) => l.url),
@@ -1119,15 +1136,61 @@ function openDetail(state) {
   openOverlay('detailPage');
   $('detailPage').scrollTop = 0;
 
-  // 카카오웹툰 작품은 대표 이미지와 전체 작품 소개를 불러옴 (이 화면을 열 때 한 번만)
-  const kw = state.group?.items.find((i) => i.source === 'kakaoWebtoon');
-  if (kw) {
-    SEARCH_SOURCES.kakaoWebtoon.fetchInfo(kw.sourceId).then((info) => {
-      if (detailState !== state) return; // 그사이 화면을 닫았으면 무시
-      state.info = info;
-      renderDetail();
-    }).catch(() => {});
-  }
+  if (state.group) loadGroupInfo(state);
+  else fillMissingInfo(works.find((w) => w.id === state.workId));
+}
+
+// 검색 결과의 작품 정보 더 불러오기 (이 화면을 열 때 한 번만, 필요한 곳에만 요청)
+// - 카카오웹툰: 대표 이미지 + 전체 소개
+// - 소개가 없으면: 카카오페이지(소개 + 태그) 또는 미스터블루(소개) 중 하나
+async function loadGroupInfo(state) {
+  const items = state.group.items;
+  const hasDesc = items.some((i) => i.desc && i.source !== 'kakaoWebtoon'); // 카카오웹툰 검색 소개는 짧은 문구라 제외
+  const targets = [
+    items.find((i) => i.source === 'kakaoWebtoon'),
+    hasDesc ? null : items.find((i) => i.source === 'kakao') || items.find((i) => i.source === 'mrblue'),
+  ].filter(Boolean);
+  if (!targets.length) return;
+
+  const results = await Promise.allSettled(targets.map((i) => SEARCH_SOURCES[i.source].fetchInfo(i)));
+  if (detailState !== state) return; // 그사이 화면을 닫았으면 무시
+  const info = {};
+  results.forEach((r) => {
+    if (r.status !== 'fulfilled') return;
+    const { cover, desc, tags } = r.value;
+    if (cover) info.cover = cover;
+    if (desc && desc.length > (info.desc || '').length) info.desc = desc;
+    if (tags?.length) info.tags = tags;
+  });
+  state.info = info;
+  renderDetail();
+}
+
+// 내 서재 작품에 작품 소개가 없으면 (예전에 담은 작품) 한 번 찾아서 채워 넣음
+const infoTried = new Set();
+async function fillMissingInfo(w) {
+  if (!w || w.desc || !w.source || infoTried.has(w.id)) return;
+  infoTried.add(w.id);
+  const src = SEARCH_SOURCES[w.source];
+  if (!src) return;
+  try {
+    let found;
+    if (src.fetchInfo) {
+      const mrblueUrl = workLinks(w).find((l) => /mrblue\.com/.test(l.url))?.url;
+      found = await src.fetchInfo({ sourceId: w.sourceId, url: mrblueUrl });
+    } else {
+      // 네이버웹툰·시리즈는 작품 정보 주소가 따로 없어서 제목으로 다시 검색해서 같은 작품을 찾음
+      const { items } = await fetchSearch(w.source, w.title);
+      found = items.find((i) => String(i.sourceId) === String(w.sourceId));
+    }
+    if (!found?.desc) return;
+    // 소개만 채우는 거라 '최근 수정' 순서는 그대로 둠
+    const work = { ...works.find((x) => x.id === w.id), desc: found.desc, genre: w.genre || found.genre || '' };
+    if (found.tags?.length) work.tags = found.tags;
+    await saveOne(work);
+    works = works.map((x) => (x.id === w.id ? work : x));
+    if (detailState?.workId === w.id) renderDetail();
+  } catch { /* 못 불러와도 소개 칸만 비어 있음 */ }
 }
 
 function renderDetail() {
@@ -1172,6 +1235,7 @@ function detailHTML(w, mine) {
       <div class="detail-sec">
         <h3>작품 소개</h3>
         <p class="detail-desc">${esc(w.desc)}</p>
+        ${w.tags?.length ? `<div class="tag-list">${w.tags.map((t) => `<span class="tag">#${esc(t)}</span>`).join('')}</div>` : ''}
       </div>` : ''}
 
     ${mine ? `

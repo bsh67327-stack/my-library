@@ -621,6 +621,8 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 .detail-sec .wide { margin-top: 18px; }
 .detail-note { margin: 22px 20px 0; font-size: 0.72rem; color: var(--muted); text-align: center; line-height: 1.5; }
 .detail-desc { font-size: 0.92rem; line-height: 1.7; color: var(--sub); white-space: pre-line; word-break: keep-all; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.tag { padding: 5px 10px; border-radius: 8px; background: var(--surface-2); font-size: 0.8rem; color: var(--sub); }
 .detail-tools { display: flex; justify-content: center; gap: 18px; margin-top: 26px; }
 .danger-link { color: var(--danger); }
 /* 서재에 없는 작품: 아래에 붙어 있는 "내 서재에 담기" */
