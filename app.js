@@ -21,7 +21,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 47;
+const APP_VERSION = 50;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -248,21 +248,23 @@ function badgesHTML(w) {
 
 // 플랫폼 배지 (플랫폼 이름에 들어간 글자로 판단)
 const PLATFORM_BADGES = [
-  { match: /네이버|naver/i, label: '네이버', cls: 'naver' },
-  { match: /카카오|kakao/i, label: '카카오', cls: 'kakao' },
-  { match: /리디|ridi/i, label: '리디', cls: 'ridi' },
-  { match: /레진|lezhin/i, label: '레진', cls: 'lezhin' },
-  { match: /미스터블루|mrblue/i, label: '미블', cls: 'mrblue' },
+  { match: /네이버|naver/i, label: '네이버', letter: 'N', cls: 'naver' },
+  { match: /카카오|kakao/i, label: '카카오', letter: 'K', cls: 'kakao' },
+  { match: /리디|ridi/i, label: '리디', letter: 'R', cls: 'ridi' },
+  { match: /레진|lezhin/i, label: '레진', letter: 'L', cls: 'lezhin' },
+  { match: /미스터블루|mrblue/i, label: '미스터블루', letter: 'M', cls: 'mrblue' },
 ];
 
-// 플랫폼이 여러 곳이면 2곳까지 (같은 회사는 하나로: 네이버웹툰 + 네이버 시리즈 → 네이버)
+// 플랫폼은 색 + 첫 글자 작은 네모로, 3곳까지 (종류 배지와 합쳐 4개가 좁은 폰에서도 한 줄에 들어가게)
+// 같은 회사는 하나로: 네이버웹툰 + 네이버 시리즈 → 네이버
 function platformBadge(platform) {
   const brands = [];
   for (const name of String(platform || '').split(',')) {
     const found = PLATFORM_BADGES.find((p) => p.match.test(name));
     if (found && !brands.includes(found)) brands.push(found);
   }
-  return brands.slice(0, 2).map((b) => `<span class="badge pf-${b.cls}">${b.label}</span>`).join('');
+  return brands.slice(0, 3)
+    .map((b) => `<span class="badge badge-pf pf-${b.cls}" title="${b.label}" aria-label="${b.label}">${b.letter}</span>`).join('');
 }
 
 // 리스트 한 줄 (서재 리스트, 홈 최근 기록, 캘린더에서 같이 씀)
@@ -929,7 +931,7 @@ async function searchPlatform(more = false, fromFinder = false) {
       .filter(([, p]) => p.hasMore)
       .map(([source, p]) => ({ source, page: p.page + 1 }));
     const btn = $('s-more');
-    if (btn) { btn.disabled = true; btn.textContent = '불러오는 중…'; }
+    if (btn && !btn.dataset.auto) { btn.disabled = true; btn.textContent = '불러오는 중…'; }
   } else if (fromFinder) {
     targets = searchState.finder.sources.map((source) => ({ source, page: 0 }));
     box.innerHTML = `<p class="msg">${esc(searchState.finder.genre.name)} 작품을 찾는 중…</p>`;
@@ -971,6 +973,8 @@ async function searchPlatform(more = false, fromFinder = false) {
     }
   });
   searchState.loading = false;
+  // 이어서 불러오기가 모두 실패하면 저절로 다시 부르지 않음 (다시 불러오기 버튼)
+  searchState.moreFailed = more && results.length > 0 && results.every((r) => r.status === 'rejected');
   renderSearchResults();
 }
 
@@ -1023,57 +1027,105 @@ function renderSearchResults() {
     (f.platform === 'all' || g.items.some((i) => platformOf(i) === f.platform)));
 
   const hasMore = Object.values(searchState.pages).some((p) => p.hasMore);
-  const countLabel = finder ? `${finder.genre.name} 작품` : '검색 결과';
+  const countLabel = finder ? `${finder.genre.name} 인기 작품` : '검색 결과';
+  // 제목 검색은 리스트(한 줄에 하나), 장르별 검색·작품 찾기는 카드(한 줄에 표지 3개)
+  const itemHTML = finder ? searchCardHTML : searchRowHTML;
+  const list = groups.map(itemHTML).join('');
   box.innerHTML = filters + `<p class="s-count">${esc(countLabel)} ${groups.length}${hasMore ? '+' : ''}</p>`
-    + (groups.length ? '' : '<p class="msg">조건에 맞는 작품이 없어요.</p>') + groups.map((g) => {
-    const main = mainItem(g);
-    const cover = coverItem(g);
-    const platforms = [...new Set(g.items.map((i) => SEARCH_SOURCES[i.source].platform))];
-    return `
-      <button type="button" class="s-item" data-key="${esc(g.key)}">
-        <img src="${esc(cover?.cover || '')}" alt="" loading="lazy"${/^#[0-9a-f]{3,8}$/i.test(cover?.coverBg || '') ? ` style="background:${cover.coverBg}"` : ''}>
-        <span class="s-body">
-          <b>${esc(main.title)}</b>
-          <small>${esc([main.author, TYPES[main.type], g.items.find((i) => i.ongoing)?.ongoing].filter(Boolean).join(' · '))}</small>
-          <span class="pf-icons">${platforms.map((p) => pfIconHTML(p)).join('')}</span>
-        </span>
+    + (groups.length ? '' : '<p class="msg">조건에 맞는 작품이 없어요.</p>')
+    + (finder ? `<div class="s-grid">${list}</div>` : list) + failed + (!hasMore
+    ? `<p class="msg">${finder ? '작품을 모두 봤어요.' : '검색 결과를 모두 봤어요.'}</p>`
+    : searchState.moreFailed
+      // 이어서 불러오기가 실패했으면 저절로 다시 부르지 않고 버튼으로
+      ? `<button type="button" id="s-more" class="ghost s-more">다시 불러오기</button>`
+      : `<p id="s-more" class="msg s-more-auto" data-auto="1"><span class="spinner small"></span></p>`);
+  watchMore();
+}
+
+// 검색 결과 한 작품의 표지 (카카오웹툰 캐릭터 그림은 작품 배경색을 깔아 줌)
+function searchCoverHTML(g) {
+  const cover = coverItem(g);
+  const bg = /^#[0-9a-f]{3,8}$/i.test(cover?.coverBg || '') ? ` style="background:${cover.coverBg}"` : '';
+  return `<img src="${esc(cover?.cover || '')}" alt="" loading="lazy"${bg}>`;
+}
+const groupPlatforms = (g) => [...new Set(g.items.map((i) => SEARCH_SOURCES[i.source].platform))];
+
+// 리스트형 (제목 검색): 왼쪽 표지 + 오른쪽 제목·작가·종류·연재 상태·플랫폼
+function searchRowHTML(g) {
+  const main = mainItem(g);
+  return `
+    <button type="button" class="s-item" data-key="${esc(g.key)}">
+      ${searchCoverHTML(g)}
+      <span class="s-body">
+        <b>${esc(main.title)}</b>
+        <small>${esc([main.author, TYPES[main.type], g.items.find((i) => i.ongoing)?.ongoing].filter(Boolean).join(' · '))}</small>
+        <span class="pf-icons">${groupPlatforms(g).map((p) => pfIconHTML(p)).join('')}</span>
+      </span>
+      ${findInLibrary(g) ? '<span class="in-library">내 서재</span>' : ''}
+    </button>`;
+}
+
+// 카드형 (장르별 검색·작품 찾기): 표지 + 제목 두 줄 + 작가 + 플랫폼
+function searchCardHTML(g) {
+  const main = mainItem(g);
+  return `
+    <button type="button" class="s-item s-card" data-key="${esc(g.key)}">
+      <span class="s-card-cover">
+        ${searchCoverHTML(g)}
         ${findInLibrary(g) ? '<span class="in-library">내 서재</span>' : ''}
-      </button>`;
-  }).join('') + failed + (hasMore
-    ? `<button type="button" id="s-more" class="ghost s-more">더 보기</button>`
-    : `<p class="msg">검색 결과를 모두 봤어요.</p>`);
+      </span>
+      <b>${esc(main.title)}</b>
+      <small>${esc(main.author || TYPES[main.type])}</small>
+      <span class="pf-icons">${groupPlatforms(g).map((p) => pfIconHTML(p)).join('')}</span>
+    </button>`;
+}
+
+// 끝까지 스크롤하면 저절로 다음 페이지 (맨 아래 표시가 화면 근처에 오면 불러옴)
+let moreObserver = null;
+function watchMore() {
+  if (!('IntersectionObserver' in window)) return;
+  moreObserver ||= new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting) && !searchState.loading) searchPlatform(true);
+  }, { root: $('searchPage'), rootMargin: '0px 0px 600px 0px' });
+  moreObserver.disconnect();
+  const sentinel = $('s-more');
+  if (sentinel?.dataset.auto) moreObserver.observe(sentinel);
 }
 
 
 // ----- 6-2-1. 작품 찾기 (홈 배너 "뭐 볼지 고민될 때") -----
-// 장르를 고르면 플랫폼마다 장르별 목록을 받아서 검색 결과 화면에 보여줌
-// (네이버웹툰·카카오웹툰·네이버 시리즈는 인기순/판매순, 카카오페이지는 업데이트순, 미스터블루는 사이트 기본 순서)
+// 장르를 고르면 플랫폼마다 장르별 인기 목록을 받아서 검색 결과 화면에 보여줌
+// 순서: 네이버웹툰 인기순 · 카카오웹툰 장르 랭킹 · 카카오페이지 장르 일간 랭킹 · 네이버 시리즈 판매순 · 미스터블루 인기순
+//      (네이버웹툰 태그 목록만 순서를 고를 수 없어서 네이버가 주는 순서)
 // 플랫폼마다 장르를 부르는 방법이 달라서 장르마다 적어 둠
 //   naver: 네이버웹툰 장르 코드 / naverTag: 네이버웹툰 태그 번호 (장르에 없는 로판·현판·학원물)
-//   kw: 카카오웹툰 장르 이름
+//   kw: 카카오웹툰 장르 랭킹 이름 (rank_ 뒤)
 //   kpToon·kpNovel: 카카오페이지 웹툰·웹소설 세부 장르 번호
-//   novel·comic: 네이버 시리즈 웹소설·만화 장르 코드
-//   mbToon·mbComic·mbNovel: 미스터블루 웹툰·만화·소설 장르 페이지 주소
+//   novel·comic: 네이버 시리즈 웹소설·만화 장르 코드 (만화 90 '소년'은 액션으로 씀)
+//   mbToon·mbComic·mbNovel: 미스터블루 웹툰·만화·소설 장르 페이지 주소 (여러 개면 합침)
+//     미스터블루 소설 '판타지' 전체에는 현대판타지가 대부분이라, 판타지는 현판을 뺀 세부 장르만 / 로맨스도 로판을 뺀 세부 장르만
 const MB_COMIC = (genre, id) => `comic/list?genre=${genre}&genreIds=${id}`;
 const FINDER_GENRES = [
-  { name: '로맨스', naver: ['PURE'], kw: '로맨스', kpToon: '121', kpNovel: '89', novel: '201', comic: '99',
-    mbToon: 'webtoon/genre/romance', mbComic: MB_COMIC('ROMANCE', '01'), mbNovel: 'novel/genre/romance/' },
-  { name: '로판', naverTag: '51', kw: '로맨스 판타지', kpToon: '69', kpNovel: '117', novel: '207',
+  { name: '로맨스', naver: ['PURE'], kw: 'romance', kpToon: '121', kpNovel: '89', novel: '201', comic: '99',
+    mbToon: 'webtoon/genre/romance', mbComic: MB_COMIC('ROMANCE', '01'),
+    mbNovel: ['novel/genre/romance/modern', 'novel/genre/romance/history'] },
+  { name: '로판', naverTag: '51', kw: 'romance_fantasy', kpToon: '69', kpNovel: '117', novel: '207',
     mbNovel: 'novel/genre/romance/romancefantasy' },
-  { name: '판타지', naver: ['FANTASY'], kw: '판타지 드라마', kpToon: '115', kpNovel: '86', novel: '202',
-    mbToon: 'webtoon/genre/fantasy', mbComic: MB_COMIC('ACTION-FANTASY', '05'), mbNovel: 'novel/genre/fantasy/' },
+  { name: '판타지', naver: ['FANTASY'], kw: 'fantasy_drama', kpToon: '115', kpNovel: '86', novel: '202',
+    mbToon: 'webtoon/genre/fantasy', mbComic: MB_COMIC('ACTION-FANTASY', '05'),
+    mbNovel: ['novel/genre/fantasy/fusionfantasy', 'novel/genre/fantasy/originfantasy', 'novel/genre/fantasy/war'] },
   { name: '현판', naverTag: '379', kpNovel: '120', novel: '208', mbNovel: 'novel/genre/fantasy/modernfantasy' },
-  { name: '무협', naver: ['HISTORICAL'], kw: '액션/무협', kpToon: '112', kpNovel: '87', novel: '206', comic: '88',
+  { name: '무협', naver: ['HISTORICAL'], kw: 'action_wuxia', kpToon: '112', kpNovel: '87', novel: '206', comic: '88',
     mbComic: MB_COMIC('HEROISM', '04'), mbNovel: 'novel/genre/heroism/' },
-  { name: '액션', naver: ['ACTION'], kw: '액션/무협', kpToon: '122', comic: '90',
+  { name: '액션', naver: ['ACTION'], kw: 'action_wuxia', kpToon: '122', comic: '90',
     mbToon: 'webtoon/genre/action', mbComic: MB_COMIC('ACTION-FANTASY', '24') },
-  { name: '드라마', naver: ['DRAMA'], kw: '드라마', kpToon: '116', comic: '93',
+  { name: '드라마', naver: ['DRAMA'], kw: 'drama', kpToon: '116', comic: '93',
     mbToon: 'webtoon/genre/drama', mbComic: MB_COMIC('ACTION-FANTASY', '07') },
-  { name: '스릴러', naver: ['THRILL'], kw: '공포/스릴러', novel: '203',
+  { name: '스릴러', naver: ['THRILL'], kw: 'horror_thriller', novel: '203',
     mbToon: 'webtoon/genre/thriller', mbNovel: 'novel/genre/others/mysterythriller' },
-  { name: '일상·개그', naver: ['DAILY', 'COMIC'], kw: '코믹/일상' },
+  { name: '일상·개그', naver: ['DAILY', 'COMIC'], kw: 'comic_everyday_life' },
   { name: '감성', naver: ['SENSIBILITY'] },
-  { name: '학원', naverTag: '95', kw: '학원/판타지', mbComic: MB_COMIC('ACTION-FANTASY', '02') },
+  { name: '학원', naverTag: '95', kw: 'school_action_fantasy', mbComic: MB_COMIC('ACTION-FANTASY', '02') },
   { name: '스포츠', naver: ['SPORTS'], mbComic: MB_COMIC('ACTION-FANTASY', '09') },
   { name: '라노벨', novel: '205', mbNovel: 'novel/genre/fantasy/lightnovel' },
   { name: 'BL', kpToon: '119', kpNovel: '123', novel: '209', comic: '107',
@@ -1114,10 +1166,23 @@ const FINDER_FETCH = {
       return { items: (d.curationViewList || []).map(naverListItem), hasMore: naverHasMore(d) };
     })()] : []),
   ]),
-  // 카카오웹툰은 장르 이름으로 검색하면 장르 작품이 나옴 (제목에 그 낱말만 들어간 작품은 뺌)
+  // 카카오웹툰 장르 랭킹 (100개, 다음 페이지 없음)
   kakaoWebtoon: async (g, page) => {
-    const res = await fetchSearch('kakaoWebtoon', g.kw, page);
-    return { items: res.items.filter((i) => i.genre === g.kw), hasMore: res.hasMore };
+    if (page > 0) return { items: [], hasMore: false };
+    const d = await callServer('kakaoWebtoonRank', g.kw, 0);
+    const ongoing = { EPISODES_PUBLISHING: '연재중', COMPLETED: '완결', END_OF_SEASON: '시즌 완결', SEASON_COMPLETED: '시즌 완결' };
+    const items = (d.items || []).map((c) => ({
+      sourceId: c.id,
+      title: c.title,
+      author: uniqueAuthors((c.authors || []).join(', ')),
+      cover: c.image ? `${c.image}.png` : '',
+      coverBg: c.bg || '',
+      type: 'webtoon',
+      url: c.seoId ? `https://webtoon.kakao.com/content/${encodeURIComponent(c.seoId)}/${c.id}` : '',
+      note: '',
+      ongoing: ongoing[c.status] || '',
+    }));
+    return { items, hasMore: false };
   },
   // 카카오페이지 장르 목록은 검색 결과와 모양이 같아서 검색 결과 읽는 법을 그대로 씀
   kakao: (g, page, types) => mergeLists([
@@ -1131,13 +1196,19 @@ const FINDER_FETCH = {
   })),
   seriesNovel: (g, page) => seriesGenreList('novel', g.novel, page),
   seriesComic: (g, page) => seriesGenreList('comic', g.comic, page),
-  // 미스터블루 장르 페이지는 한 번에 100~120개 (다음 페이지는 없음)
-  mrblue: (g, page, types) => mergeLists([
-    g.mbToon && wantType(types, 'webtoon') && [g.mbToon, 'webtoon'],
-    g.mbComic && wantType(types, 'comic') && [g.mbComic, 'comic'],
-    g.mbNovel && wantType(types, 'webnovel') && [g.mbNovel, 'webnovel'],
-  ].filter(Boolean).map(async ([path, type]) =>
-    ({ items: parseMrblueGenre(await callServer('mrblueGenre', path, page, true), type), hasMore: false }))),
+  // 미스터블루 장르 페이지 인기순: 한 번에 100~120개 (다음 페이지는 만화 목록만 있음)
+  mrblue: (g, page, types) => {
+    const list = (paths) => [].concat(paths || []);
+    const jobs = [
+      ...(wantType(types, 'webtoon') ? list(g.mbToon).map((p) => [p, 'webtoon']) : []),
+      ...(wantType(types, 'comic') ? list(g.mbComic).map((p) => [p, 'comic']) : []),
+      ...(wantType(types, 'webnovel') ? list(g.mbNovel).map((p) => [p, 'webnovel']) : []),
+    ].filter(([path]) => page === 0 || path.startsWith('comic/'));
+    return mergeLists(jobs.map(async ([path, type]) => {
+      const items = parseMrblueGenre(await callServer('mrblueGenre', path, page, true), type);
+      return { items, hasMore: path.startsWith('comic/') && items.length >= 120 };
+    }));
+  },
 };
 
 async function seriesGenreList(kind, code, page) {
@@ -1200,13 +1271,13 @@ function renderFinder() {
 }
 
 // 고른 장르·종류·플랫폼·연재 상태로 받아 올 곳
-// (카카오웹툰·미스터블루는 목록에 연재 상태가 없어서 연재 상태를 고르면 뺌)
+// (미스터블루는 목록에 연재 상태가 없어서 연재 상태를 고르면 뺌)
 function finderSources(g) {
   const ok = (platform, ...types) =>
     (!finderPick.platforms.size || finderPick.platforms.has(platform)) && wantType(finderPick.types, ...types);
   return [
     (g.naver || g.naverTag) && ok('네이버웹툰', 'webtoon') && 'naverWebtoon',
-    g.kw && !finderPick.ongoing && ok('카카오웹툰', 'webtoon') && 'kakaoWebtoon',
+    g.kw && ok('카카오웹툰', 'webtoon') && 'kakaoWebtoon',
     ((g.kpToon && ok('카카오페이지', 'webtoon', 'comic')) || (g.kpNovel && ok('카카오페이지', 'webnovel'))) && 'kakao',
     g.novel && ok('네이버 시리즈', 'webnovel') && 'seriesNovel',
     g.comic && ok('네이버 시리즈', 'webtoon', 'comic') && 'seriesComic',

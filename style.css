@@ -227,12 +227,14 @@ h1 { display: flex; align-items: center; gap: 8px; font-size: 1.5rem; font-weigh
 /* 표지 왼쪽 위: 종류·플랫폼 배지 */
 .badges {
   position: absolute; top: 5px; left: 5px; right: 5px; z-index: 1;
-  display: flex; flex-wrap: wrap; gap: 3px;
+  display: flex; flex-wrap: nowrap; gap: 3px; overflow: hidden;
 }
 .badge {
-  font-size: 0.6rem; font-weight: 700; padding: 2px 5px; border-radius: 4px;
+  flex: none; font-size: 0.58rem; font-weight: 700; line-height: 1.4; padding: 1px 4px; border-radius: 4px;
   background: rgba(0, 0, 0, 0.6); color: #fff;
 }
+/* 플랫폼: 첫 글자만 넣은 작은 네모 (종류 배지와 같은 높이) */
+.badge-pf { display: grid; place-items: center; width: 16px; padding: 1px 0; font-weight: 800; }
 /* 플랫폼 색 */
 .pf-naver { background: #03c75a; }
 .pf-kakao { background: #ffcd00; color: #1e1e1e; }
@@ -683,6 +685,22 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 .pf-icons .pf-icon { width: 20px; height: 20px; font-size: 0.64rem; }
 .in-library { flex: none; align-self: flex-start; margin-top: 4px; font-size: 0.7rem; padding: 3px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-strong); }
 .s-more { width: 100%; padding: 12px; margin-top: 14px; font-weight: 400; }
+/* 카드형 결과 (장르별 검색·작품 찾기): 한 줄에 표지 3개 */
+.s-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 10px; margin-top: 10px; }
+.s-item.s-card {
+  display: flex; flex-direction: column; align-items: stretch; gap: 3px;
+  padding: 0; border: none; min-width: 0;
+}
+.s-card-cover { position: relative; display: block; margin-bottom: 4px; }
+.s-card-cover img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; background: var(--surface-2); display: block; }
+.s-card-cover .in-library { position: absolute; left: 5px; top: 5px; margin: 0; }
+.s-item.s-card b { font-size: 0.86rem; line-height: 1.3; }
+.s-item.s-card small { font-size: 0.74rem; }
+.s-card .pf-icons { margin-top: 2px; }
+.s-card .pf-icons .pf-icon { width: 18px; height: 18px; font-size: 0.6rem; }
+/* 끝까지 내리면 저절로 더 불러올 때 보이는 작은 로딩 표시 */
+.s-more-auto { display: flex; justify-content: center; padding: 22px 0 30px; }
+.spinner.small { width: 22px; height: 22px; border-width: 2.5px; }
 /* 검색 화면 제목들도 굵지 않게 */
 #searchPage .s-results .sec-head h2 { font-size: 1rem; font-weight: 500; }
 .manual-add b { font-weight: 500; }
