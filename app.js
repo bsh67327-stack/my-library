@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 59;
+const APP_VERSION = 61;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -123,6 +123,24 @@ function looksJapaneseAuthor(names) {
   return list.length > 0 && !list.some(isCompanyName) && list.some(clearlyJapanese) && list.every(maybeJapanese);
 }
 
+// 목록을 다시 그려도 화면에 이미 있던 표지 그림(같은 주소)은 새로 만들지 않고 그대로 옮겨 씀
+// - 다 받은 그림은 그대로, 받는 중이던 그림은 이어서 받음 → 새로 들어온 작품만 새로 받아서 표지가 깜빡이지 않음
+function setHTMLKeepImages(el, html) {
+  const old = new Map();
+  el.querySelectorAll('img[src]').forEach((img) => {
+    const src = img.getAttribute('src');
+    if (!old.has(src)) old.set(src, img);
+  });
+  el.innerHTML = html;
+  el.querySelectorAll('img[src]').forEach((img) => {
+    const prev = old.get(img.getAttribute('src'));
+    if (!prev) return;
+    old.delete(img.getAttribute('src'));
+    prev.className = img.className;
+    img.replaceWith(prev);
+  });
+}
+
 // http(s)로 시작하는 주소만 링크로 씀 (이상한 주소가 실행되지 않게)
 function safeUrl(url) {
   return /^https?:\/\//i.test(url || '') ? url : '';
@@ -197,7 +215,7 @@ function render() {
   $('libTotal').textContent = `${list.length}개`;
   renderLibFilters();
   $('grid').className = `layout-${view.layout}`;
-  $('grid').innerHTML = list.map(view.layout === 'card' ? cardHTML : rowHTML).join('');
+  setHTMLKeepImages($('grid'), list.map(view.layout === 'card' ? cardHTML : rowHTML).join(''));
   document.querySelectorAll('#layoutToggle button')
     .forEach((b) => b.classList.toggle('active', b.dataset.layout === view.layout));
 
@@ -438,9 +456,9 @@ const SHELF_MAX = 30;
 function renderHome() {
   const byUpdated = [...works].sort((a, b) => b.updatedAt - a.updatedAt);
   $('shelfCount').textContent = works.length || '';
-  $('recentList').innerHTML = works.length
+  setHTMLKeepImages($('recentList'), works.length
     ? `<div class="stack">${byUpdated.slice(0, SHELF_MAX).map(spineHTML).join('')}</div>`
-    : '<p class="hint">아직 기록한 작품이 없어요.<br>위 검색창에서 첫 작품을 추가해 보세요!</p>';
+    : '<p class="hint">아직 기록한 작품이 없어요.<br>위 검색창에서 첫 작품을 추가해 보세요!</p>');
 }
 
 // 닉네임 (이 폰에 저장하고, 백업 파일에도 같이 넣음). 정하지 않았으면 "독자"
@@ -465,9 +483,9 @@ function renderSettings() {
 // 피드: 한줄평을 남긴 작품을 최근 순으로 (나중에 다른 사람 한줄평도 이 모양으로)
 function renderFeed() {
   const posts = works.filter((w) => w.review).sort((a, b) => b.updatedAt - a.updatedAt);
-  $('feedList').innerHTML = posts.length
+  setHTMLKeepImages($('feedList'), posts.length
     ? posts.map(feedHTML).join('')
-    : '<p class="hint">작품에 한줄평을 남기면 여기에 쌓여요.</p>';
+    : '<p class="hint">작품에 한줄평을 남기면 여기에 쌓여요.</p>');
 }
 
 function feedHTML(w) {
@@ -546,7 +564,7 @@ function renderCalendar() {
           </span>` : ''}
       </button>`;
   }
-  $('calGrid').innerHTML = html;
+  setHTMLKeepImages($('calGrid'), html);
   $('calSummary').innerHTML = monthCount
     ? `이번 달에 <b>${monthCount}작품</b>을 기록했어요`
     : '이번 달에 기록한 작품이 없어요';
@@ -562,9 +580,9 @@ function renderCalDayList() {
     : [];
   if (picked.length) {
     const [, m, d] = cal.selected.split('-').map(Number);
-    $('calDayList').innerHTML = `
+    setHTMLKeepImages($('calDayList'), `
       <h3 class="cal-day-title">${m}월 ${d}일에 추가한 작품 ${picked.length}개</h3>
-      <div class="list">${picked.map(rowHTML).join('')}</div>`;
+      <div class="list">${picked.map(rowHTML).join('')}</div>`);
   } else {
     $('calDayList').innerHTML = '';
   }
@@ -1027,10 +1045,15 @@ function mainItem(group) {
 // 묶음의 표지: 가장 최근에 업데이트된 플랫폼의 표지 (날짜가 같거나 없으면 플랫폼 순서대로)
 // 검색 목록·작품 정보·서재에 담을 때 모두 이 표지 하나를 씀
 // (카카오웹툰 검색 결과는 캐릭터 그림이라, 다른 플랫폼 표지가 있으면 그걸 씀)
+// 한 번 고른 표지는 다른 플랫폼이 나중에 붙어도 바꾸지 않음 (목록 표지가 바뀌어 깜빡이지 않게)
+// (카카오웹툰 캐릭터 그림밖에 없었을 때만 다른 플랫폼 표지로 바꿈)
 function coverItem(group) {
+  const prev = group.coverPick;
+  if (prev && prev.source !== 'kakaoWebtoon' && group.items.includes(prev)) return prev;
   const withCover = [...group.items].filter((i) => i.cover)
     .sort((a, b) => (b.updated || 0) - (a.updated || 0) || sourceRank(a.source) - sourceRank(b.source));
-  return withCover.find((i) => i.source !== 'kakaoWebtoon') || withCover[0] || null;
+  group.coverPick = withCover.find((i) => i.source !== 'kakaoWebtoon') || withCover[0] || null;
+  return group.coverPick;
 }
 
 // 새로 검색 (more = true면 다음 페이지가 있는 플랫폼만 이어서 불러옴)
@@ -1046,7 +1069,7 @@ async function searchPlatform(more = false, fromFinder = false) {
   let targets;
   if (more) {
     targets = Object.entries(searchState.pages)
-      .filter(([, p]) => p.hasMore)
+      .filter(([source, p]) => p.hasMore && wantPlatform(source))
       .map(([source, p]) => ({ source, page: p.page + 1 }));
     const btn = $('s-more');
     if (btn && !btn.dataset.auto) { btn.disabled = true; btn.textContent = '불러오는 중…'; }
@@ -1064,6 +1087,7 @@ async function searchPlatform(more = false, fromFinder = false) {
   searchState.loading = true;
   searchState.failed = [];
   const { q, finder } = searchState;
+  const shownBefore = more ? [...searchState.groups.values()].filter(passesFilters).length : 0;
   // 모든 플랫폼에 동시에 요청하고, 실패한 곳이 있어도 나머지 결과는 보여줌
   // (작품 찾기는 플랫폼의 장르 목록 순서(인기순)를 rank 로 기억해 둠)
   const run = async (t) => {
@@ -1093,6 +1117,9 @@ async function searchPlatform(more = false, fromFinder = false) {
   searchState.loading = false;
   // 이어서 불러오기가 모두 실패하면 저절로 다시 부르지 않음 (다시 불러오기 버튼)
   searchState.moreFailed = more && results.length > 0 && results.every((r) => r.status === 'rejected');
+  // 이어서 불러왔는데 화면에 보이는 작품이 하나도 안 늘었으면(필터 때문에) 저절로 계속 부르지 않고 버튼으로
+  searchState.moreIdle = more && !searchState.moreFailed
+    && [...searchState.groups.values()].filter(passesFilters).length === shownBefore;
   renderSearchResults();
 }
 
@@ -1147,19 +1174,21 @@ function renderSearchResults() {
     (f.platform === 'all' || g.items.some((i) => platformOf(i) === f.platform)) &&
     (f.ongoing === 'all' || (f.ongoing === '완결' ? /완결/.test(ongoingOf(g)) : ongoingOf(g) === f.ongoing)));
 
-  const hasMore = Object.values(searchState.pages).some((p) => p.hasMore);
+  // 플랫폼 필터를 골랐으면 그 플랫폼에 다음 페이지가 있을 때만 더 불러옴
+  const hasMore = Object.entries(searchState.pages).some(([source, p]) => p.hasMore && wantPlatform(source));
   const countLabel = finder ? `${finder.genre.name} 인기 작품` : '검색 결과';
   // 제목 검색은 리스트(한 줄에 하나), 장르별 검색·작품 찾기는 카드(한 줄에 표지 3개)
   const itemHTML = finder ? searchCardHTML : searchRowHTML;
   const list = groups.map(itemHTML).join('');
-  box.innerHTML = filters + `<p class="s-count">${esc(countLabel)} ${groups.length}${hasMore ? '+' : ''}</p>`
+  // 다시 그려도 이미 화면에 있던 표지 그림은 그대로 옮겨 씀 (표지가 깜빡이지 않게)
+  setHTMLKeepImages(box, filters + `<p class="s-count">${esc(countLabel)} ${groups.length}${hasMore ? '+' : ''}</p>`
     + (groups.length ? '' : '<p class="msg">조건에 맞는 작품이 없어요.</p>')
     + (finder ? `<div class="s-grid">${list}</div>` : list) + failed + (!hasMore
     ? `<p class="msg">${finder ? '작품을 모두 봤어요.' : '검색 결과를 모두 봤어요.'}</p>`
-    : searchState.moreFailed
-      // 이어서 불러오기가 실패했으면 저절로 다시 부르지 않고 버튼으로
-      ? `<button type="button" id="s-more" class="ghost s-more">다시 불러오기</button>`
-      : `<p id="s-more" class="msg s-more-auto" data-auto="1"><span class="spinner small"></span></p>`);
+    : searchState.moreFailed || searchState.moreIdle
+      // 이어서 불러오기가 실패했거나 보이는 작품이 안 늘었으면 저절로 다시 부르지 않고 버튼으로
+      ? `<button type="button" id="s-more" class="ghost s-more">${searchState.moreFailed ? '다시 불러오기' : '더 불러오기'}</button>`
+      : `<p id="s-more" class="msg s-more-auto" data-auto="1"><span class="spinner small"></span></p>`));
   watchMore();
   watchCards();
 }
@@ -1928,7 +1957,9 @@ function addOtherPlatforms(group) {
     group.searched = true;
     const main = mainItem(group);
     const found = await titleLookup(main.title);
-    const rank = Math.min(...group.items.map((i) => i.rank ?? 9999)) + 0.5;
+    // 원작 소설·웹툰판 카드는 지금까지 불러온 목록 맨 끝에 붙임 (중간에 끼우면 뒤 카드가 다 밀려서 깜빡여 보임)
+    const ranks = [...searchState.groups.values()].flatMap((g) => g.items.map((i) => i.rank ?? 0));
+    const rank = Math.max(0, ...ranks) + 0.01;
     const touched = [group];
     for (const it of found) {
       if (it.type === main.type) {
@@ -1985,23 +2016,25 @@ async function titleLookup(title) {
 }
 
 // 결과 목록은 다시 그리지 않고(표지가 깜빡이지 않게) 카드의 플랫폼 아이콘만 바꾸고,
-// 원작 소설·웹툰판 카드는 원작 카드 바로 뒤에 끼워 넣음
+// 원작 소설·웹툰판 카드는 목록 맨 끝에 붙임 (위 카드들이 밀리지 않게)
 function refreshCards(group, touched) {
   const box = $('s-results');
+  const grid = box.querySelector('.s-grid');
   const cardOf = (g) => box.querySelector(`.s-item[data-key="${CSS.escape(g.key)}"]`);
-  let anchor = cardOf(group);
-  if (!anchor) return;
+  if (!grid || !cardOf(group)) return;
   for (const g of touched) {
     const card = cardOf(g);
     if (card) {
       card.querySelector('.pf-icons').innerHTML = groupPlatforms(g).map((p) => pfIconHTML(p)).join('');
     } else if (passesFilters(g)) {
-      anchor.insertAdjacentHTML('afterend', searchCardHTML(g));
-      anchor = anchor.nextElementSibling;
-      cardObserver?.observe(anchor);
+      grid.insertAdjacentHTML('beforeend', searchCardHTML(g));
+      cardObserver?.observe(grid.lastElementChild);
     }
   }
 }
+
+// 위쪽 플랫폼 필터를 골랐으면 그 플랫폼 결과만 더 불러옴
+const wantPlatform = (source) => searchState.filter.platform === 'all' || SEARCH_SOURCES[source].platform === searchState.filter.platform;
 
 // 결과 목록에 보일 작품인지 (작품 찾기 조건 + 위쪽 필터) - renderSearchResults 와 같은 기준
 function passesFilters(g) {
@@ -2729,6 +2762,7 @@ function bindEvents() {
       const { filter: kind, value } = filter.dataset;
       // 연재 상태는 다시 누르면 해제
       searchState.filter[kind] = kind === 'ongoing' && searchState.filter.ongoing === value ? 'all' : value;
+      searchState.moreIdle = false;
       renderSearchResults();
       return;
     }
