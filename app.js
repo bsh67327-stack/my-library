@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 65;
+const APP_VERSION = 68;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -328,8 +328,7 @@ function cardHTML(w) {
         <span class="stars small">${starsHTML(w.rating)}</span>
         <h3>${esc(w.title)}</h3>
         ${w.author ? `<p class="author">${esc(uniqueAuthors(w.author))}</p>` : ''}
-        <span class="status status-${w.status}">${STATUSES[w.status]}</span>
-        ${progressHTML(w)}
+        <div class="status-line">${statusHTML(w)}</div>
       </div>
     </article>`;
 }
@@ -376,11 +375,9 @@ function rowHTML(w) {
         <div class="item-meta">
           <span class="stars small">${starsHTML(w.rating)}</span>
           ${w.rating ? `<b class="rating-num">${w.rating.toFixed(1)}</b>` : ''}
-          <span class="status status-${w.status}">${STATUSES[w.status]}</span>
+          ${statusHTML(w)}
         </div>
-        ${progressHTML(w)}
         ${w.review ? `<p class="review">${esc(w.review)}</p>` : ''}
-        ${linksHTML(w)}
       </div>
     </article>`;
 }
@@ -411,14 +408,6 @@ function spineHTML(w) {
     </article>`;
 }
 
-// 리스트의 플랫폼 바로가기 아이콘 (누르면 원래 플랫폼으로 이동)
-function linksHTML(w) {
-  const links = workLinks(w);
-  if (!links.length) return '';
-  return `<div class="go-links">${links.map((l) =>
-    `<a class="go-link" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.name)}에서 보기">${pfIconHTML(l.name)}</a>`).join('')}</div>`;
-}
-
 // 플랫폼 아이콘: 플랫폼 색 + 첫 글자 (공식 로고 파일이 아니라 직접 그린 표시)
 const PLATFORM_ICONS = [
   { match: /베스트도전|도전만화/, cls: 'naver-ch', letter: 'N' },
@@ -439,16 +428,13 @@ function pfIconHTML(name) {
 }
 
 // 진행 막대 + "32 / 189화" + +1 버튼 (최신 회차는 직접 입력한 값)
-function progressHTML(w) {
-  if (!w.progress && !w.latest && w.status !== 'reading') return '';
+// 상태 + 오른쪽에 본 회차 (예: "보는 중 34화", 최신 화수를 알면 "34 / 120화") - 서재 카드형·리스트형
+function statusHTML(w) {
   const unit = unitOf(w.type, w.unit);
   const seen = w.progress || 0;
-  return `
-    <div class="progress">
-      ${w.latest ? `<span class="bar"><i style="width:${Math.min(100, (seen / w.latest) * 100)}%"></i></span>` : ''}
-      <span class="progress-text">${seen}${w.latest ? ` / ${w.latest}` : ''}${unit}</span>
-      ${w.status === 'reading' ? `<button type="button" class="plus-btn" data-id="${esc(w.id)}">+1</button>` : ''}
-    </div>`;
+  const showProgress = seen || w.latest || w.status === 'reading';
+  return `<span class="status status-${w.status}">${STATUSES[w.status]}</span>`
+    + (showProgress ? `<span class="progress-text">${seen}${w.latest ? ` / ${w.latest}` : ''}${unit}</span>` : '');
 }
 
 // 홈 "내 서재": 기록한 작품을 책등처럼 쌓아서 (맨 위가 가장 최근, 너무 길어지지 않게 30권까지)
@@ -708,16 +694,6 @@ async function handleSubmit(e) {
   $('editor').close();
   // 검색 결과 정보 화면에서 "내 서재에 담기"로 저장했으면, 그 화면을 내 작품 정보로 바꿈
   if (detailState?.group) detailState = { workId: work.id };
-  render();
-}
-
-// 카드의 +1 버튼: 수정 창을 열지 않고 바로 한 화 더하기
-async function addProgress(id) {
-  const old = works.find((w) => w.id === id);
-  if (!old) return;
-  const work = { ...old, progress: (old.progress || 0) + 1, updatedAt: Date.now() };
-  await saveOne(work);
-  works = works.map((w) => (w.id === id ? work : w));
   render();
 }
 
@@ -1142,7 +1118,7 @@ function renderSearchResults() {
   if (finder) {
     all = all.filter((g) =>
       (!finder.types.size || finder.types.has(mainItem(g).type)) &&
-      (!finder.platforms?.size || g.items.some((i) => finder.platforms.has(SEARCH_SOURCES[i.source].platform))));
+      (!finder.platforms?.size || g.items.some((i) => [...finder.platforms].some((p) => inFilterPlatform(SEARCH_SOURCES[i.source].platform, p)))));
   }
   const failed = searchState.failed.length
     ? `<p class="msg"><small>${finder ? '불러오지 못한 곳' : '검색하지 못한 곳'}: ${esc(searchState.failed.join(', '))}</small></p>`
@@ -1160,8 +1136,10 @@ function renderSearchResults() {
   const platformOf = (i) => SEARCH_SOURCES[i.source].platform;
   const typesIn = Object.keys(TYPES).filter((t) => all.some((g) => mainItem(g).type === t));
   // 작품 찾기는 다른 플랫폼을 나중에 찾아 붙이니까 처음부터 모든 플랫폼 버튼을 보여줌
-  const platformsIn = [...new Set(SEARCH_TARGETS.map((s) => SEARCH_SOURCES[s].platform))]
-    .filter((p) => finder || all.some((g) => g.items.some((i) => platformOf(i) === p)));
+  // (버튼은 네이버웹툰·네이버 시리즈를 "네이버" 하나로 - filterPlatformOf)
+  const platformsIn = [...new Set(SEARCH_TARGETS.map((s) => filterPlatformOf(SEARCH_SOURCES[s].platform)))]
+    .filter((p) => finder || all.some((g) => g.items.some((i) => inFilterPlatform(platformOf(i), p))))
+    .sort((a, b) => (FILTER_ORDER.indexOf(a) + 1 || 99) - (FILTER_ORDER.indexOf(b) + 1 || 99));
   const chip = (kind, value, label) =>
     `<button type="button" class="f-chip${f[kind] === value ? ' active' : ''}" data-filter="${kind}" data-value="${esc(value)}">${esc(label)}</button>`;
   const filters = `
@@ -1172,7 +1150,7 @@ function renderSearchResults() {
   const ongoingOf = (g) => mergeOngoing(g.items.map((i) => i.ongoing));
   const groups = all.filter((g) =>
     (f.type === 'all' || mainItem(g).type === f.type) &&
-    (f.platform === 'all' || g.items.some((i) => platformOf(i) === f.platform)) &&
+    (f.platform === 'all' || g.items.some((i) => inFilterPlatform(platformOf(i), f.platform))) &&
     (f.ongoing === 'all' || (f.ongoing === '완결' ? /완결/.test(ongoingOf(g)) : ongoingOf(g) === f.ongoing)));
 
   // 플랫폼 필터를 골랐으면 그 플랫폼에 다음 페이지가 있을 때만 더 불러옴
@@ -1312,7 +1290,15 @@ const FINDER_GENRES = [
   { name: 'BL', lz: ['bl'], kwKey: ['BL'], kpToon: '119', kpNovel: '123', novel: '209', comic: '107',
     mbToon: 'webtoon/genre/bl', mbComic: MB_COMIC('BL', '22'), mbNovel: 'novel/genre/bl/' },
 ];
-const FINDER_PLATFORMS = ['네이버웹툰', '카카오웹툰', '카카오페이지', '네이버 시리즈', '미스터블루', '레진코믹스'];
+const FINDER_PLATFORMS = ['네이버', '카카오페이지', '카카오웹툰', '미스터블루', '레진코믹스'];
+// 플랫폼 고르는 버튼 순서
+const FILTER_ORDER = ['네이버', '카카오페이지', '카카오웹툰', '미스터블루', '레진코믹스', '네이버 베스트도전'];
+
+// 플랫폼 고르는 버튼에서만 네이버웹툰 + 네이버 시리즈를 "네이버" 하나로 묶음 (카드 배지는 플랫폼마다 따로)
+// (베스트도전은 정식 연재가 아니라 따로 둠)
+const FILTER_GROUPS = { 네이버: ['네이버웹툰', '네이버 시리즈'] };
+const filterPlatformOf = (platform) => Object.keys(FILTER_GROUPS).find((k) => FILTER_GROUPS[k].includes(platform)) || platform;
+const inFilterPlatform = (platform, picked) => platform === picked || !!FILTER_GROUPS[picked]?.includes(platform);
 
 // 키워드 (장르 대신 고름): 플랫폼마다 다른 태그·키워드를 우리 이름 하나로 묶음
 // 키워드 목록이 있는 곳만 - 네이버웹툰 태그 · 카카오웹툰 키워드 · 미스터블루 키워드
@@ -2057,7 +2043,7 @@ function refreshCards(group, touched) {
 }
 
 // 위쪽 플랫폼 필터를 골랐으면 그 플랫폼 결과만 더 불러옴
-const wantPlatform = (source) => searchState.filter.platform === 'all' || SEARCH_SOURCES[source].platform === searchState.filter.platform;
+const wantPlatform = (source) => searchState.filter.platform === 'all' || inFilterPlatform(SEARCH_SOURCES[source].platform, searchState.filter.platform);
 
 // 결과 목록에 보일 작품인지 (작품 찾기 조건 + 위쪽 필터) - renderSearchResults 와 같은 기준
 function passesFilters(g) {
@@ -2065,9 +2051,9 @@ function passesFilters(g) {
   const platformOf = (i) => SEARCH_SOURCES[i.source].platform;
   const ongoing = mergeOngoing(g.items.map((i) => i.ongoing));
   return (!finder || ((!finder.types.size || finder.types.has(mainItem(g).type)) &&
-      (!finder.platforms?.size || g.items.some((i) => finder.platforms.has(platformOf(i)))))) &&
+      (!finder.platforms?.size || g.items.some((i) => [...finder.platforms].some((p) => inFilterPlatform(platformOf(i), p)))))) &&
     (f.type === 'all' || mainItem(g).type === f.type) &&
-    (f.platform === 'all' || g.items.some((i) => platformOf(i) === f.platform)) &&
+    (f.platform === 'all' || g.items.some((i) => inFilterPlatform(platformOf(i), f.platform))) &&
     (f.ongoing === 'all' || (f.ongoing === '완결' ? /완결/.test(ongoing) : ongoing === f.ongoing));
 }
 
@@ -2696,8 +2682,6 @@ function bindEvents() {
   // 카드 누르면 작품 정보 화면 열기
   const onCardClick = (e) => {
     if (e.target.closest('.go-link')) return; // 플랫폼 아이콘은 링크만 열고 정보 화면은 안 엶
-    const plus = e.target.closest('.plus-btn');
-    if (plus) { addProgress(plus.dataset.id); return; }
     const card = e.target.closest('.card');
     if (card) openDetail({ workId: card.dataset.id });
   };
