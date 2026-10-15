@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 73;
+const APP_VERSION = 74;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -1222,9 +1222,6 @@ function renderSearchResults() {
   setHTMLKeepImages(box, filters + `<div class="s-count-row"><p class="s-count">${esc(countLabel)} ${groups.length}${hasMore ? '+' : ''}</p>${sortHTML}</div>`
     + (groups.length ? '' : '<p class="msg no-match">조건에 맞는 작품이 없어요.</p>')
     + (finder ? `<div class="s-grid">${list}</div>` : list) + failed
-    // 작품 찾기에서 플랫폼을 골랐으면 아직 다른 플랫폼을 안 찾아본 작품도 찾는 중이라고 표시
-    + (finder && f.platform !== 'all' && all.some((g) => !g.done)
-      ? '<p id="lookingNote" class="msg"><span class="spinner small"></span> 다른 플랫폼에서도 찾는 중…</p>' : '')
     + (!hasMore
     ? `<p class="msg">${finder ? '작품을 모두 봤어요.' : '검색 결과를 모두 봤어요.'}</p>`
     : searchState.moreFailed || searchState.moreIdle
@@ -2170,9 +2167,8 @@ function pumpLookups() {
     lookupActive++;
     addOtherPlatforms(g).catch(() => {}).finally(() => { lookupActive--; pumpLookups(); });
   }
-  // 다 찾았으면 "찾는 중" 표시를 지움
+  // 다 찾았는데 보이는 작품이 없으면 "조건에 맞는 작품이 없어요"
   if (!lookupActive && !lookupQueue.length) {
-    $('lookingNote')?.remove();
     const box = $('s-results');
     if (searchState.finder && !box.querySelector('.s-card') && !box.querySelector('.no-match')) {
       box.querySelector('.s-grid')?.insertAdjacentHTML('afterend', '<p class="msg no-match">조건에 맞는 작품이 없어요.</p>');
