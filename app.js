@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 57;
+const APP_VERSION = 58;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -1224,44 +1224,45 @@ function watchMore() {
 //   kpToon·kpNovel: 카카오페이지 웹툰·웹소설 세부 장르 번호
 //   novel·comic: 네이버 시리즈 웹소설·만화 장르 코드 (만화 90 '소년'은 소년 장르로 씀)
 //   mbToon·mbComic·mbNovel: 미스터블루 웹툰·만화·소설 장르 페이지 주소 (여러 개면 합침)
+//   lz: 레진코믹스 장르 (레진은 장르별 목록이 없어서 전체 인기 순위 500개를 받아 장르로 거름)
 //     미스터블루 소설 '판타지' 전체에는 현대판타지가 대부분이라, 판타지는 현판을 뺀 세부 장르만 / 로맨스도 로판을 뺀 세부 장르만
 const MB_COMIC = (genre, id) => `comic/list?genre=${genre}&genreIds=${id}`;
 const FINDER_GENRES = [
-  { name: '순정·로맨스', naver: ['PURE'], kw: 'romance', kpToon: '121', kpNovel: '89', novel: '201', comic: '99',
+  { name: '순정·로맨스', lz: ['romance'], naver: ['PURE'], kw: 'romance', kpToon: '121', kpNovel: '89', novel: '201', comic: '99',
     mbToon: 'webtoon/genre/romance', mbComic: MB_COMIC('ROMANCE', '01'),
     mbNovel: ['novel/genre/romance/modern', 'novel/genre/romance/history'] },
   { name: '로판', naverTag: '51', kw: 'romance_fantasy', kpToon: '69', kpNovel: '117', novel: '207',
     mbNovel: 'novel/genre/romance/romancefantasy' },
-  { name: '판타지', naver: ['FANTASY'], kw: 'fantasy_drama', kpToon: '115', kpNovel: '86', novel: '202',
+  { name: '판타지', lz: ['fantasy'], naver: ['FANTASY'], kw: 'fantasy_drama', kpToon: '115', kpNovel: '86', novel: '202',
     mbToon: 'webtoon/genre/fantasy', mbComic: MB_COMIC('ACTION-FANTASY', '05'),
     mbNovel: ['novel/genre/fantasy/fusionfantasy', 'novel/genre/fantasy/originfantasy', 'novel/genre/fantasy/war'] },
   { name: '현판', naverTag: '379', kpNovel: '120', novel: '208', mbNovel: 'novel/genre/fantasy/modernfantasy' },
   { name: '무협', naver: ['HISTORICAL'], kw: 'action_wuxia', kpToon: '112', kpNovel: '87', novel: '206', comic: '88',
     mbComic: MB_COMIC('HEROISM', '04'), mbNovel: 'novel/genre/heroism/' },
-  { name: '액션', naver: ['ACTION'], kw: 'action_wuxia', kpToon: '122',
+  { name: '액션', lz: ['action'], naver: ['ACTION'], kw: 'action_wuxia', kpToon: '122',
     mbToon: 'webtoon/genre/action', mbComic: MB_COMIC('ACTION-FANTASY', '24') },
-  { name: '드라마', naver: ['DRAMA'], kw: 'drama', kpToon: '116', comic: '93',
+  { name: '드라마', lz: ['drama'], naver: ['DRAMA'], kw: 'drama', kpToon: '116', comic: '93',
     mbToon: 'webtoon/genre/drama', mbComic: MB_COMIC('ACTION-FANTASY', '07') },
   // 공포는 네이버 스릴러 장르·카카오웹툰 공포/스릴러 랭킹에 같이 들어 있음 + 네이버 '공포' 태그
-  { name: '공포·스릴러', naver: ['THRILL'], naverTag: [236], kw: 'horror_thriller', novel: '203',
+  { name: '공포·스릴러', lz: ['mystery'], naver: ['THRILL'], naverTag: [236], kw: 'horror_thriller', novel: '203',
     mbToon: 'webtoon/genre/thriller', mbNovel: 'novel/genre/others/mysterythriller' },
   // 소년: 네이버 소년물·소년왕도물 태그, 네이버 시리즈 만화 '소년', 미스터블루 웹툰 키워드 '소년'
   // (웹소설도 들어갈 수 있게 '소년만화'가 아니라 '소년' - 지금은 소년 웹소설 목록을 주는 플랫폼이 없음)
   { name: '소년', naverTag: [334, 66], comic: '90', mbToon: 'keywords/webtoon?id=870' },
   // 학원·스포츠는 다른 장르와 겹쳐도 됨 (현판이면서 학원물이면 두 장르에 다 나옴)
   // 학원: 네이버 학원물·아카데미물 태그, 카카오웹툰 캠퍼스물·학원로맨스물, 미스터블루 학원/캠퍼스 키워드·만화 학원
-  { name: '학원', kp: ['학원물', '캠퍼스물', '학원'], naverTag: [95, 262], kwKey: ['캠퍼스물', '학원로맨스물'], mbNovel: 'keywords/novel?id=12',
+  { name: '학원', lz: ['school'], kp: ['학원물', '캠퍼스물', '학원'], naverTag: [95, 262], kwKey: ['캠퍼스물', '학원로맨스물'], mbNovel: 'keywords/novel?id=12',
     mbToon: 'keywords/webtoon?id=879', mbComic: MB_COMIC('ACTION-FANTASY', '02') },
   { name: '스포츠', kp: ['스포츠', '스포츠물'], naver: ['SPORTS'], naverTag: [67], mbNovel: 'keywords/novel?id=28',
     mbToon: 'keywords/webtoon?id=872', mbComic: MB_COMIC('ACTION-FANTASY', '09') },
   // 미스터블루는 개그·일상 장르 페이지가 없어서 키워드 페이지(웹툰 개그/코믹·일상, 소설 개그물)로
-  { name: '일상·개그', naver: ['DAILY', 'COMIC'], kw: 'comic_everyday_life',
+  { name: '일상·개그', lz: ['gag', 'day'], naver: ['DAILY', 'COMIC'], kw: 'comic_everyday_life',
     mbToon: ['keywords/webtoon?id=866', 'keywords/webtoon?id=876'], mbNovel: 'keywords/novel?id=125' },
   { name: '라노벨', novel: '205', mbNovel: 'novel/genre/fantasy/lightnovel' },
-  { name: 'BL', kpToon: '119', kpNovel: '123', novel: '209', comic: '107',
+  { name: 'BL', lz: ['bl'], kwKey: ['BL'], kpToon: '119', kpNovel: '123', novel: '209', comic: '107',
     mbToon: 'webtoon/genre/bl', mbComic: MB_COMIC('BL', '22'), mbNovel: 'novel/genre/bl/' },
 ];
-const FINDER_PLATFORMS = ['네이버웹툰', '카카오웹툰', '카카오페이지', '네이버 시리즈', '미스터블루'];
+const FINDER_PLATFORMS = ['네이버웹툰', '카카오웹툰', '카카오페이지', '네이버 시리즈', '미스터블루', '레진코믹스'];
 
 // 키워드 (장르 대신 고름): 플랫폼마다 다른 태그·키워드를 우리 이름 하나로 묶음
 // 키워드 목록이 있는 곳만 - 네이버웹툰 태그 · 카카오웹툰 키워드 · 미스터블루 키워드
@@ -1281,7 +1282,7 @@ const KEYWORD_GROUPS = [
   { name: '세계관', icon: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>', keywords: [
     { name: '이세계', kp: ['차원이동'], naverTag: [78], ...mb(null, 894), hot: true },
     { name: '현대', kp: ['현대물'], naverTag: [349], ...mb(14, 900) },
-    { name: '동양풍/사극', kp: ['동양풍', '퓨전사극'], naverTag: [348, 115, 91], ...mb(5, 884) },
+    { name: '동양풍/사극', kwKey: ['가상시대물'], kp: ['동양풍', '퓨전사극'], naverTag: [348, 115, 91], ...mb(5, 884) },
     { name: '서양풍/중세', kp: ['서양풍', '중세물'], naverTag: [350, 354], ...mb(9, 887) },
     { name: '궁정/귀족', kp: ['왕족/귀족', '궁정로맨스'], naverTag: [314], ...mb([34, 4]) },
     { name: '오피스', kp: ['오피스물', '회사원'], naverTag: [345, 73], kwKey: ['오피스물'], ...mb(null, 892) },
@@ -1309,7 +1310,7 @@ const KEYWORD_GROUPS = [
     { name: '전문직', kp: ['전문직', '전문직물', '메디컬물'], naverTag: [127, 76, 173], kwKey: ['전문직물'], ...mb([37, 20, 22]) },
     { name: '인외존재', kp: ['인외존재', '이종족'], naverTag: [79], ...mb(36, 939) },
     { name: '오컬트/괴담', kp: ['오컬트', '귀신', '크툴루'], naverTag: [124, 41, 376] },
-    { name: '전쟁/군대', kp: ['전쟁', '전쟁물', '군대물'], naverTag: [332, 116], kwKey: ['전쟁물'], ...mb(15, [941, 896]) },
+    { name: '전쟁/군대', kp: ['전쟁', '전쟁물', '군대물'], naverTag: [332, 116], kwKey: ['전쟁물', '군대물'], ...mb(15, [941, 896]) },
     { name: '동물', naverTag: [47], ...mb(null, 919) },
   ] },
   { name: '관계', icon: '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15.5 14.5c3 0 5.5 2.2 5.5 5.5"/>', keywords: [
@@ -1363,12 +1364,12 @@ const KEYWORD_GROUPS = [
     { name: '로맨틱코미디', kp: ['로맨틱코미디'], naverTag: [385, 270, 176], kwKey: ['로맨틱코미디물'], ...mb(129) },
     { name: '사이다/통쾌한', kp: ['사이다녀', '권선징악'], naverTag: [119, 253], kwKey: ['통쾌한'], hot: true },
     { name: '잔잔한/감성', kp: ['잔잔물'], naver: ['SENSIBILITY'], naverTag: [364, 269], ...mb(137) },
-    { name: '눈물샘', kp: ['애잔물'], naverTag: [357], kwKey: ['가슴 먹먹한'], ...mb([131, 134]) },
+    { name: '눈물샘', kp: ['애잔물'], naverTag: [357], kwKey: ['가슴 먹먹한', '슬픈'], ...mb([131, 134]) },
     { name: '피폐한', kp: ['피폐물'], naverTag: [359], kwKey: ['피폐물', '처절한'], ...mb(139, 899) },
-    { name: '다크한', kp: ['시리어스물'], naverTag: [361, 45] },
+    { name: '다크한', kwKey: ['우울한'], kp: ['시리어스물'], naverTag: [361, 45] },
     { name: '미스터리한', kp: ['미스테리', '추리물'], naverTag: [250, 63], kwKey: ['미스테리한'], ...mb(138) },
     { name: '긴장감 있는', kp: ['스릴 넘치는'], naverTag: [362, 375, 380], kwKey: ['긴장감 있는'] },
-    { name: '열혈', naverTag: [363] },
+    { name: '열혈', kwKey: ['역동적인'], naverTag: [363] },
   ] },
 ];
 const FINDER_KEYWORDS = KEYWORD_GROUPS.flatMap((g) => g.keywords);
@@ -1454,6 +1455,23 @@ const FINDER_FETCH = {
     items.forEach((i) => { i.author = uniqueAuthors(i.author); });
     return { items, hasMore: SEARCH_SOURCES.kakao.hasMore(d) };
   })),
+  // 레진코믹스: 전체 인기 순위(500개, 다음 페이지 없음)에서 고른 장르가 붙은 작품만
+  lezhin: async (g, page) => {
+    if (page > 0) return { items: [], hasMore: false };
+    lezhinRank = lezhinRank || callServer('lezhinRank', 'all').catch((e) => { lezhinRank = null; throw e; });
+    const d = await lezhinRank;
+    const items = (d.items || []).filter((c) => (c.genres || []).some((x) => g.lz.includes(x))).map((c) => ({
+      sourceId: c.alias,
+      title: c.title,
+      author: uniqueAuthors((c.authors || []).join(', ')),
+      cover: c.id ? `https://ccdn.lezhin.com/v2/comics/${c.id}/images/tall.webp?updated=${c.updatedAt || ''}&width=320` : '',
+      type: 'webtoon',
+      url: `https://www.lezhin.com/ko/comic/${encodeURIComponent(c.alias)}`,
+      note: '',
+      ongoing: c.state === 'completed' ? '완결' : c.state === 'scheduled' ? '연재중' : '',
+    }));
+    return { items, hasMore: false };
+  },
   seriesNovel: (g, page) => seriesGenreList('novel', g.novel, page),
   seriesComic: (g, page) => seriesGenreList('comic', g.comic, page),
   // 미스터블루 장르 페이지 인기순: 한 번에 100~120개 (다음 페이지는 만화 목록만 있음)
@@ -1474,6 +1492,9 @@ const FINDER_FETCH = {
     }));
   },
 };
+
+// 레진 인기 순위는 앱을 켜 둔 동안 한 번만 받아서 장르마다 나눠 씀
+let lezhinRank = null;
 
 async function seriesGenreList(kind, code, page) {
   const items = parseSeries(await callServer('seriesGenre', `${kind}/${code}`, page, true), kind);
@@ -1602,6 +1623,7 @@ function finderSources(g) {
     (g.naver || g.naverTag) && ok('네이버웹툰', 'webtoon') && 'naverWebtoon',
     (g.kw || g.kwKey) && ok('카카오웹툰', 'webtoon') && 'kakaoWebtoon',
     (g.kp || (g.kpToon && ok('카카오페이지', 'webtoon', 'comic')) || (g.kpNovel && ok('카카오페이지', 'webnovel'))) && 'kakao',
+    g.lz && ok('레진코믹스', 'webtoon') && 'lezhin',
     g.novel && ok('네이버 시리즈', 'webnovel') && 'seriesNovel',
     g.comic && ok('네이버 시리즈', 'webtoon', 'comic') && 'seriesComic',
     ((g.mbToon && ok('미스터블루', 'webtoon')) || (g.mbComic && ok('미스터블루', 'comic'))
@@ -2028,12 +2050,7 @@ function otherFormsHTML(group) {
   return `
     <div class="detail-sec">
       <h3>${title}</h3>
-      <div class="pf-buttons">
-        ${others.map((g) => `
-          <button type="button" class="pf-btn" data-other-form="${esc(g.key)}">
-            ${groupPlatforms(g).map((p) => pfIconHTML(p)).join('')}<span>${esc(TYPES[mainItem(g).type] || '')}</span>
-          </button>`).join('')}
-      </div>
+      <div class="other-forms">${others.map((g) => searchRowHTML(g).replace('data-key="', 'data-other-form="')).join('')}</div>
     </div>`;
 }
 

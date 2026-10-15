@@ -1108,3 +1108,7 @@ dialog button:focus { outline: none; }
   }
 }
 
+
+/* 작품 정보 화면: 같은 제목의 다른 형태(원작 소설 ↔ 웹툰판)를 검색 결과와 같은 목록으로 */
+.other-forms .s-item { width: 100%; padding: 10px 0; border: none; border-bottom: 1px solid var(--border); background: none; text-align: left; }
+.other-forms .s-item:last-child { border-bottom: none; }
