@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 63;
+const APP_VERSION = 65;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -765,7 +765,7 @@ function parseSeries(html, kind) {
       title: text.replace(/\s*\((?:총\s*)?[\d,]+\s*(?:화|권)[^)]*\)\s*$/, '').replace(/\s*\[독점\]/, '').trim(),
       author: authors.join(', '),
       // 19세 작품은 네이버 로그인이 있어야 표지가 보여서 "19" 대체 그림이 옴 → 표지 없음으로 (다른 플랫폼 표지를 씀)
-      cover: img && !/19over/.test(img.getAttribute('src')) ? img.getAttribute('src').replace(/\?type=.*$/, '?type=m260') : '',
+      cover: img && !/19over/.test(img.getAttribute('src')) ? img.getAttribute('src').replace(/\?type=.*$/, '?type=m480') : '', // m260 은 가로 173px 라 흐림
       type,
       unit,
       note: TYPES[type],
@@ -879,7 +879,7 @@ const SEARCH_SOURCES = {
         sourceId: c.alias,
         title: c.title,
         author: (c.authors || []).map((a) => a.name).join(', '),
-        cover: !novel && c.id ? `https://ccdn.lezhin.com/v2/comics/${c.id}/images/tall.webp?updated=${c.updatedAt || ''}&width=320` : '',
+        cover: !novel && c.id ? `https://ccdn.lezhin.com/v2/comics/${c.id}/images/tall.webp?updated=${c.updatedAt || ''}&width=480` : '',
         type: novel ? 'webnovel' : c.book ? 'comic' : 'webtoon',
         url: `https://www.lezhin.com/ko/${novel ? 'novel' : 'comic'}/${encodeURIComponent(c.alias)}`,
         note: '',
@@ -1199,12 +1199,17 @@ function renderSearchResults() {
 }
 
 // 검색 결과 한 작품의 표지 (카카오웹툰 캐릭터 그림은 작품 배경색을 깔아 줌)
-function searchCoverHTML(g) {
+function searchCoverHTML(g, big = false) {
   const cover = coverItem(g);
   const bg = /^#[0-9a-f]{3,8}$/i.test(cover?.coverBg || '') ? ` style="background:${cover.coverBg}"` : '';
+  const src = big ? bigCover(cover?.cover) : cover?.cover;
   // 표지가 없으면 src 를 빼서 깨진 그림 표시 대신 빈 칸으로
-  return `<img${cover?.cover ? ` src="${esc(cover.cover)}"` : ''} alt="" loading="lazy"${bg}>`;
+  return `<img${src ? ` src="${esc(src)}"` : ''} alt="" loading="lazy"${bg}>`;
 }
+
+// 크게 보이는 곳(카드·작품 정보·서재)에 쓸 큰 표지 주소
+// 카카오페이지 목록 그림(th3)은 가로 240px 라 카드에서 흐려서 원본(o1, 720px)으로 - 작은 목록 표지는 그대로 th3
+const bigCover = (url) => String(url || '').replace(/(page-images\.kakaoentcdn\.com\/download\/resource\?kid=[^&]+&filename=)th\d/, '$1o1');
 const groupPlatforms = (g) => [...new Set(g.items.map((i) => SEARCH_SOURCES[i.source].platform))];
 
 // 리스트형 (제목 검색): 왼쪽 표지 + 오른쪽 제목·작가·종류·연재 상태·플랫폼
@@ -1228,7 +1233,7 @@ function searchCardHTML(g) {
   return `
     <button type="button" class="s-item s-card" data-key="${esc(g.key)}">
       <span class="s-card-cover">
-        ${searchCoverHTML(g)}
+        ${searchCoverHTML(g, true)}
         ${searchBadgesHTML(g)}
         ${findInLibrary(g) ? '<span class="in-library">내 서재</span>' : ''}
       </span>
@@ -1509,7 +1514,7 @@ const FINDER_FETCH = {
       sourceId: c.alias,
       title: c.title,
       author: uniqueAuthors((c.authors || []).join(', ')),
-      cover: c.id ? `https://ccdn.lezhin.com/v2/comics/${c.id}/images/tall.webp?updated=${c.updatedAt || ''}&width=320` : '',
+      cover: c.id ? `https://ccdn.lezhin.com/v2/comics/${c.id}/images/tall.webp?updated=${c.updatedAt || ''}&width=480` : '',
       type: 'webtoon',
       url: `https://www.lezhin.com/ko/comic/${encodeURIComponent(c.alias)}`,
       note: '',
@@ -1874,7 +1879,7 @@ function groupAsWork(group, info = {}) {
     title: main.title,
     author: main.author || '',
     type: main.type,
-    cover: useKwCover ? info.cover : cover?.cover || '',
+    cover: useKwCover ? info.cover : bigCover(cover?.cover),
     coverSource: useKwCover ? '카카오웹툰' : cover ? SEARCH_SOURCES[cover.source].platform : '',
     platform: [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', '),
     genre: info.genre || sorted.find((i) => i.genre)?.genre || '',
