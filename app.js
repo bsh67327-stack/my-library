@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 56;
+const APP_VERSION = 57;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -551,9 +551,16 @@ function renderCalendar() {
     ? `이번 달에 <b>${monthCount}작품</b>을 기록했어요`
     : '이번 달에 기록한 작품이 없어요';
 
-  // 선택한 날짜의 작품 목록
-  const picked = cal.selected && byDay[cal.selected];
-  if (picked && cal.selected.startsWith(`${year}-${pad(month + 1)}`)) {
+  renderCalDayList();
+}
+
+// 선택한 날짜의 작품 목록 (날짜를 누를 때는 달력은 그대로 두고 이것만 다시 그림 - 달력 표지를 다시 불러오지 않게)
+function renderCalDayList() {
+  const { year, month } = cal;
+  const picked = cal.selected && cal.selected.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`)
+    ? works.filter((w) => dateKey(w.createdAt) === cal.selected).sort((a, b) => a.createdAt - b.createdAt)
+    : [];
+  if (picked.length) {
     const [, m, d] = cal.selected.split('-').map(Number);
     $('calDayList').innerHTML = `
       <h3 class="cal-day-title">${m}월 ${d}일에 추가한 작품 ${picked.length}개</h3>
@@ -983,21 +990,6 @@ const sourceRank = (source) => ALL_SOURCES.indexOf(source);
 // 제목 검색할 곳: 도전만화는 검색에서 뺌 (베스트도전만 남김, 예전에 담은 도전만화 작품은 그대로 열림)
 const SEARCH_TARGETS = ALL_SOURCES.filter((s) => s !== 'naverChallenge');
 
-// 결과를 가져오지 않고 버튼으로만 연결하는 곳 (프로그램 요청을 막아 둔 곳 - 리디는 봇 차단·약관,
-// 네이버웹소설은 robots.txt 전체 금지). 누르면 휴대폰 브라우저에서 그 사이트 검색 화면이 열림
-const LINK_OUT = [
-  { name: '리디', url: (q) => `https://ridibooks.com/search?q=${encodeURIComponent(q)}` },
-  { name: '네이버웹소설', url: (q) => `https://novel.naver.com/search?keyword=${encodeURIComponent(q)}` },
-];
-const linkOutHTML = (q) => !q ? '' : `
-  <div class="link-out">
-    <p>다른 곳에서도 찾아보기</p>
-    <div class="lo-row">${LINK_OUT.map((l) => `
-      <a class="lo-btn" href="${esc(l.url(q))}" target="_blank" rel="noopener">${esc(l.name)}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>
-      </a>`).join('')}
-    </div>
-  </div>`;
 
 // 같은 작품인지 비교하려고 제목에서 띄어쓰기·기호·[독점] 같은 표시를 뺌
 function titleKey(title) {
@@ -1131,7 +1123,7 @@ function renderSearchResults() {
   if (!all.length) {
     box.innerHTML = (searchState.failed.length === (finder ? finder.sources.length : SEARCH_TARGETS.length)
       ? '<p class="msg">검색에 실패했어요. 잠시 후 다시 해보세요.</p>'
-      : '<p class="msg">검색 결과가 없어요.</p>') + failed + (finder ? '' : linkOutHTML(searchState.q));
+      : '<p class="msg">검색 결과가 없어요.</p>') + failed;
     return;
   }
 
@@ -1163,7 +1155,7 @@ function renderSearchResults() {
   box.innerHTML = filters + `<p class="s-count">${esc(countLabel)} ${groups.length}${hasMore ? '+' : ''}</p>`
     + (groups.length ? '' : '<p class="msg">조건에 맞는 작품이 없어요.</p>')
     + (finder ? `<div class="s-grid">${list}</div>` : list) + failed + (!hasMore
-    ? `<p class="msg">${finder ? '작품을 모두 봤어요.' : '검색 결과를 모두 봤어요.'}</p>${finder ? '' : linkOutHTML(searchState.q)}`
+    ? `<p class="msg">${finder ? '작품을 모두 봤어요.' : '검색 결과를 모두 봤어요.'}</p>`
     : searchState.moreFailed
       // 이어서 불러오기가 실패했으면 저절로 다시 부르지 않고 버튼으로
       ? `<button type="button" id="s-more" class="ghost s-more">다시 불러오기</button>`
@@ -2453,7 +2445,7 @@ function bindEvents() {
   $('homeSearch').addEventListener('click', () => openSearch());
 
   // 작품 찾기: 장르는 하나만, 종류·플랫폼은 여러 개, 연재 상태는 하나 (다시 누르면 해제)
-  $('finderBanner').addEventListener('click', openFinder);
+  $('finderBanner').addEventListener('click', () => openFinder('info'));
   $('finderBack').addEventListener('click', closeOverlay);
   $('finderPage').addEventListener('click', (e) => {
     const tab = e.target.closest('.f-tab');
@@ -2659,7 +2651,8 @@ function bindEvents() {
     const cell = e.target.closest('.cal-cell.has');
     if (!cell) return;
     cal.selected = cal.selected === cell.dataset.date ? null : cell.dataset.date;
-    renderCalendar();
+    document.querySelectorAll('#calGrid .cal-cell').forEach((c) => c.classList.toggle('selected', c.dataset.date === cal.selected));
+    renderCalDayList();
     if (cal.selected) $('calDayList').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
   $('calPrev').addEventListener('click', () => moveMonth(-1));
