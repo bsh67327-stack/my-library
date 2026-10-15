@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 70;
+const APP_VERSION = 71;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -125,10 +125,19 @@ function looksJapaneseAuthor(names) {
 
 // 표지 그림을 못 불러오면(대부분 로그인해야 볼 수 있는 19세 작품) 같은 자리·같은 크기의 회색 칸에 "19세 이상 관람가"
 // (표지가 원래 없는 작품은 여기로 오지 않고 제목 글자 칸 그대로)
+// - 같은 작품의 다른 플랫폼 표지(data-alts)가 있으면 차례로 바꿔 보고, 모두 실패하면 회색 칸
+// - 화면에 붙어 있지 않은 그림(다시 그리면서 버린 것)의 실패는 진짜 실패가 아니라서 무시
 const failedCovers = new Set();
 function coverError(img) {
+  if (!img.isConnected) return;
   const src = img.getAttribute('src');
   if (src) failedCovers.add(src);
+  const alts = (img.dataset.alts || '').split(' ').filter((u) => u && !failedCovers.has(u));
+  if (alts.length) {
+    img.dataset.alts = alts.slice(1).join(' ');
+    img.src = alts[0];
+    return;
+  }
   const box = document.createElement('span');
   box.className = 'blocked-cover';
   box.dataset.src = src || '';
@@ -138,22 +147,32 @@ function coverError(img) {
 
 // 목록을 다시 그려도 화면에 이미 있던 표지 그림(같은 주소)은 새로 만들지 않고 그대로 옮겨 씀
 // - 다 받은 그림은 그대로, 받는 중이던 그림은 이어서 받음 → 새로 들어온 작품만 새로 받아서 표지가 깜빡이지 않음
+// (새 HTML은 화면 밖 <template> 안에서 만들어서, 버릴 그림은 아예 받지 않음)
 function setHTMLKeepImages(el, html) {
   const old = new Map();
   el.querySelectorAll('img[src]').forEach((img) => {
     const src = img.getAttribute('src');
     if (!old.has(src)) old.set(src, img);
   });
-  el.innerHTML = html;
-  el.querySelectorAll('img[src]').forEach((img) => {
-    // 전에 못 불러온 표지는 다시 받지 않고 바로 "19세 이상 관람가" 칸으로
-    if (failedCovers.has(img.getAttribute('src'))) { coverError(img); return; }
-    const prev = old.get(img.getAttribute('src'));
-    if (!prev) return;
-    old.delete(img.getAttribute('src'));
-    prev.className = img.className;
-    img.replaceWith(prev);
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  tpl.content.querySelectorAll('img[src]').forEach((img) => {
+    const src = img.getAttribute('src');
+    const prev = old.get(src);
+    if (prev) {
+      old.delete(src);
+      prev.className = img.className;
+      img.replaceWith(prev);
+      return;
+    }
+    // 전에 못 불러온 표지는 다른 플랫폼 표지부터 (없으면 화면에 붙인 뒤 회색 칸으로)
+    if (failedCovers.has(src)) {
+      const alt = (img.dataset.alts || '').split(' ').find((u) => u && !failedCovers.has(u));
+      if (alt) img.setAttribute('src', alt);
+    }
   });
+  el.replaceChildren(tpl.content);
+  el.querySelectorAll('img[src]').forEach((img) => { if (failedCovers.has(img.getAttribute('src'))) coverError(img); });
 }
 
 // http(s)로 시작하는 주소만 링크로 씀 (이상한 주소가 실행되지 않게)
@@ -326,9 +345,10 @@ function coverHTML(w, cls) {
   return `
     <div class="${cls}">
       <span class="cover-fallback">${esc(w.title)}</span>
-      ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="coverError(this)">` : ''}
+      ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="coverError(this)"${altsAttr(w)}>` : ''}
     </div>`;
 }
+const altsAttr = (w) => (w.coverAlts?.length ? ` data-alts="${esc(w.coverAlts.join(' '))}"` : '');
 
 // 카드형: 한 줄에 표지 3개, 표지 왼쪽 위에 종류·플랫폼, 아래에 별점·제목·작가·상태·진행
 function cardHTML(w) {
@@ -336,7 +356,7 @@ function cardHTML(w) {
     <article class="card tile" data-id="${esc(w.id)}">
       <div class="cover">
         <span class="cover-fallback">${esc(w.title)}</span>
-        ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="coverError(this)">` : ''}
+        ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="coverError(this)"${altsAttr(w)}>` : ''}
         ${badgesHTML(w)}
       </div>
       <div class="tile-info">
@@ -560,7 +580,7 @@ function renderCalendar() {
         ${first ? `
           <span class="cal-cover${list.length > 1 ? ' multi' : ''}">
             <span class="cal-fallback">${esc(first.title)}</span>
-            ${first.cover ? `<img src="${esc(first.cover)}" alt="${esc(first.title)}" loading="lazy" onerror="coverError(this)">` : ''}
+            ${first.cover ? `<img src="${esc(first.cover)}" alt="${esc(first.title)}" loading="lazy" onerror="coverError(this)"${altsAttr(first)}>` : ''}
             ${list.length > 1 ? `<span class="cal-more">+${list.length - 1}</span>` : ''}
           </span>` : ''}
       </button>`;
@@ -1039,10 +1059,11 @@ function mainItem(group) {
 // (카카오웹툰 검색 결과는 캐릭터 그림이라, 다른 플랫폼 표지가 있으면 그걸 씀)
 // 한 번 고른 표지는 다른 플랫폼이 나중에 붙어도 바꾸지 않음 (목록 표지가 바뀌어 깜빡이지 않게)
 // (카카오웹툰 캐릭터 그림밖에 없었을 때만 다른 플랫폼 표지로 바꿈)
+const coverFailed = (i) => failedCovers.has(i.cover) || failedCovers.has(bigCover(i.cover));
 function coverItem(group) {
   const prev = group.coverPick;
-  if (prev && prev.source !== 'kakaoWebtoon' && group.items.includes(prev)) return prev;
-  const withCover = [...group.items].filter((i) => i.cover)
+  if (prev && prev.source !== 'kakaoWebtoon' && group.items.includes(prev) && !coverFailed(prev)) return prev;
+  const withCover = [...group.items].filter((i) => i.cover && !coverFailed(i))
     .sort((a, b) => (b.updated || 0) - (a.updated || 0) || sourceRank(a.source) - sourceRank(b.source));
   group.coverPick = withCover.find((i) => i.source !== 'kakaoWebtoon') || withCover[0] || null;
   return group.coverPick;
@@ -1197,8 +1218,15 @@ function searchCoverHTML(g, big = false) {
   const cover = coverItem(g);
   const bg = /^#[0-9a-f]{3,8}$/i.test(cover?.coverBg || '') ? ` style="background:${cover.coverBg}"` : '';
   const src = big ? bigCover(cover?.cover) : cover?.cover;
+  const alts = coverAlts(g, cover, big);
   // 표지가 없으면 src 를 빼서 깨진 그림 표시 대신 빈 칸으로
-  return `<img${src ? ` src="${esc(src)}" onerror="coverError(this)"` : ''} alt="" loading="lazy"${bg}>`;
+  return `<img${src ? ` src="${esc(src)}" onerror="coverError(this)"${alts.length ? ` data-alts="${esc(alts.join(' '))}"` : ''}` : ''} alt="" loading="lazy"${bg}>`;
+}
+
+// 고른 표지를 못 불러오면 대신 쓸 같은 작품의 다른 플랫폼 표지들
+function coverAlts(g, cover, big = false) {
+  return [...new Set(g.items.filter((i) => i !== cover && i.cover).map((i) => (big ? bigCover(i.cover) : i.cover)))]
+    .filter((u) => u && !/\s/.test(u));
 }
 
 // 크게 보이는 곳(카드·작품 정보·서재)에 쓸 큰 표지 주소
@@ -1881,6 +1909,7 @@ function groupAsWork(group, info = {}) {
     author: main.author || '',
     type: main.type,
     cover: useKwCover ? info.cover : bigCover(cover?.cover),
+    coverAlts: coverAlts(group, useKwCover ? null : cover, true), // 표지를 못 불러올 때 대신 쓸 다른 플랫폼 표지
     coverSource: useKwCover ? '카카오웹툰' : cover ? SEARCH_SOURCES[cover.source].platform : '',
     platform: [...new Set(sorted.map((i) => SEARCH_SOURCES[i.source].platform))].join(', '),
     genre: info.genre || sorted.find((i) => i.genre)?.genre || '',
@@ -2048,6 +2077,18 @@ function refreshCards(group, touched) {
     const card = cardOf(g);
     if (card) {
       card.querySelector('.badges').outerHTML = searchBadgesHTML(g);
+      // 새로 붙은 플랫폼 표지를 대체 표지로 (이미 회색 칸이 됐으면 그 표지로 되살림)
+      const img = card.querySelector('.s-card-cover img[src]');
+      const alts = coverAlts(g, null, true).filter((u) => !failedCovers.has(u) && u !== img?.getAttribute('src'));
+      if (img) {
+        if (alts.length) img.dataset.alts = alts.join(' ');
+      } else {
+        // 표지가 없던 카드(빈 칸)나 못 불러온 카드(회색 칸)
+        const empty = card.querySelector('.s-card-cover .blocked-cover, .s-card-cover img:not([src])');
+        if (empty && alts.length) {
+          empty.outerHTML = `<img src="${esc(alts[0])}" onerror="coverError(this)" data-alts="${esc(alts.slice(1).join(' '))}" alt="" loading="lazy">`;
+        }
+      }
     } else if (passesFilters(g)) {
       grid.insertAdjacentHTML('beforeend', searchCardHTML(g));
       cardObserver?.observe(grid.lastElementChild);
