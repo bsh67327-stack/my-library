@@ -619,6 +619,58 @@ body.overlay-open { position: fixed; left: 0; right: 0; overflow: hidden; }
 .finder-reset svg { width: 17px; height: 17px; }
 .finder-bar .primary { padding: 14px; border-radius: 14px; font-size: 1rem; }
 
+/* 작품 찾기 위쪽: 뒤로 + 정보 / 키워드 탭 */
+.finder-top { padding-bottom: 0; border-bottom: 1px solid var(--border); }
+.finder-tabs { display: flex; gap: 22px; margin-left: 10px; }
+.f-tab {
+  position: relative; padding: 10px 2px 12px; border: none; background: none;
+  color: var(--muted); font-size: 1.08rem; font-weight: 700;
+}
+.f-tab.active { color: var(--text); }
+.f-tab.active::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2.5px;
+  border-radius: 2px; background: var(--accent);
+}
+/* 고른 것이 있는 탭에는 작은 점 */
+.f-tab.dot::before {
+  content: ''; position: absolute; top: 9px; right: -7px; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--accent);
+}
+
+/* 키워드 탭: 회색 바탕 위에 묶음별 흰 카드 */
+#finderPage.kw-mode { background: var(--surface-2); }
+#finderPage.kw-mode .overlay-top { background: var(--bg); }
+.finder-kw { padding: 0 12px 110px; }
+.kw-search {
+  position: sticky; top: calc(58px + env(safe-area-inset-top)); z-index: 1;
+  margin: 0 -12px 12px; padding: 12px 20px; background: var(--bg);
+}
+.kw-search input {
+  width: 100%; padding: 12px 46px 12px 16px; border: none; border-radius: 12px;
+  background: var(--surface-2); color: var(--text); font-size: 16px;
+}
+.kw-search input::placeholder { color: var(--muted); }
+.kw-search input::-webkit-search-cancel-button { display: none; }
+.kw-search svg { position: absolute; right: 34px; top: 50%; width: 20px; height: 20px; transform: translateY(-50%); color: var(--sub); pointer-events: none; }
+.kw-card { margin-bottom: 10px; padding: 18px 16px 6px; border-radius: 16px; background: var(--bg); }
+.kw-head { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 1rem; font-weight: 700; }
+.kw-ico {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px;
+  background: var(--accent-soft); color: var(--accent-strong);
+}
+.kw-ico svg { width: 18px; height: 18px; }
+.kw-chips { padding-bottom: 12px; }
+.kw-chips .f-pick { height: 38px; padding: 0 15px; }
+/* 접힌 묶음은 세 줄까지 (칩 38px × 3 + 사이 8px × 2) */
+.kw-card:not(.open) .kw-chips { max-height: 130px; overflow: hidden; padding-bottom: 0; margin-bottom: 12px; }
+.kw-fold {
+  display: grid; place-items: center; width: calc(100% + 32px); margin: 0 -16px; padding: 10px 0;
+  border: none; border-top: 1px solid var(--border); background: none; color: var(--muted);
+}
+.kw-fold[hidden] { display: none; }
+.kw-fold svg { width: 20px; height: 20px; transition: transform 0.2s; }
+.kw-card.open .kw-fold svg { transform: rotate(180deg); }
+
 /* 검색 화면: 둥근 검색창 (돋보기는 오른쪽) */
 .search-form { flex: 1; position: relative; }
 .search-form input {
@@ -669,8 +721,8 @@ body.overlay-open { position: fixed; left: 0; right: 0; overflow: hidden; }
 .genre-icon:active .gi-badge { transform: scale(0.95); }
 .gi-name { font-size: 0.84rem; color: var(--sub); white-space: nowrap; }
 /* 작품 찾기 화면: 장르 아이콘을 여러 줄로, 고른 장르는 테두리 + 굵은 이름 */
-#finderGenres { gap: 14px 4px; }
-#finderGenres .genre-icon { width: calc((100% - 16px) / 5); }
+#finderGenres { gap: 16px 4px; }
+#finderGenres .genre-icon { width: calc((100% - 12px) / 4); }
 .genre-icon.active .gi-badge { box-shadow: 0 0 0 2px var(--g); }
 .genre-icon.active .gi-name { color: var(--text); font-weight: 700; }
 /* 검색·작품 찾기 결과 필터: 종류 버튼과 연재중/완결 버튼 사이 칸막이 */

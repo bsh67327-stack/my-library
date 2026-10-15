@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 55;
+const APP_VERSION = 56;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -1190,12 +1190,12 @@ function watchMore() {
 //   naver: 네이버웹툰 장르 코드 / naverTag: 네이버웹툰 태그 번호 (장르에 없는 로판·현판·학원물)
 //   kw: 카카오웹툰 장르 랭킹 이름 (rank_ 뒤)
 //   kpToon·kpNovel: 카카오페이지 웹툰·웹소설 세부 장르 번호
-//   novel·comic: 네이버 시리즈 웹소설·만화 장르 코드 (만화 90 '소년'은 액션으로 씀)
+//   novel·comic: 네이버 시리즈 웹소설·만화 장르 코드 (만화 90 '소년'은 소년 장르로 씀)
 //   mbToon·mbComic·mbNovel: 미스터블루 웹툰·만화·소설 장르 페이지 주소 (여러 개면 합침)
 //     미스터블루 소설 '판타지' 전체에는 현대판타지가 대부분이라, 판타지는 현판을 뺀 세부 장르만 / 로맨스도 로판을 뺀 세부 장르만
 const MB_COMIC = (genre, id) => `comic/list?genre=${genre}&genreIds=${id}`;
 const FINDER_GENRES = [
-  { name: '로맨스', naver: ['PURE'], kw: 'romance', kpToon: '121', kpNovel: '89', novel: '201', comic: '99',
+  { name: '순정·로맨스', naver: ['PURE'], kw: 'romance', kpToon: '121', kpNovel: '89', novel: '201', comic: '99',
     mbToon: 'webtoon/genre/romance', mbComic: MB_COMIC('ROMANCE', '01'),
     mbNovel: ['novel/genre/romance/modern', 'novel/genre/romance/history'] },
   { name: '로판', naverTag: '51', kw: 'romance_fantasy', kpToon: '69', kpNovel: '117', novel: '207',
@@ -1206,55 +1206,150 @@ const FINDER_GENRES = [
   { name: '현판', naverTag: '379', kpNovel: '120', novel: '208', mbNovel: 'novel/genre/fantasy/modernfantasy' },
   { name: '무협', naver: ['HISTORICAL'], kw: 'action_wuxia', kpToon: '112', kpNovel: '87', novel: '206', comic: '88',
     mbComic: MB_COMIC('HEROISM', '04'), mbNovel: 'novel/genre/heroism/' },
-  { name: '액션', naver: ['ACTION'], kw: 'action_wuxia', kpToon: '122', comic: '90',
+  { name: '액션', naver: ['ACTION'], kw: 'action_wuxia', kpToon: '122',
     mbToon: 'webtoon/genre/action', mbComic: MB_COMIC('ACTION-FANTASY', '24') },
   { name: '드라마', naver: ['DRAMA'], kw: 'drama', kpToon: '116', comic: '93',
     mbToon: 'webtoon/genre/drama', mbComic: MB_COMIC('ACTION-FANTASY', '07') },
-  { name: '스릴러', naver: ['THRILL'], kw: 'horror_thriller', novel: '203',
+  // 공포는 네이버 스릴러 장르·카카오웹툰 공포/스릴러 랭킹에 같이 들어 있음 + 네이버 '공포' 태그
+  { name: '공포·스릴러', naver: ['THRILL'], naverTag: [236], kw: 'horror_thriller', novel: '203',
     mbToon: 'webtoon/genre/thriller', mbNovel: 'novel/genre/others/mysterythriller' },
-  { name: '일상·개그', naver: ['DAILY', 'COMIC'], kw: 'comic_everyday_life' },
-  { name: '감성', naver: ['SENSIBILITY'] },
-  { name: '학원', naverTag: '95', kw: 'school_action_fantasy', mbComic: MB_COMIC('ACTION-FANTASY', '02') },
-  { name: '스포츠', naver: ['SPORTS'], mbComic: MB_COMIC('ACTION-FANTASY', '09') },
+  // 소년: 네이버 소년물·소년왕도물 태그, 네이버 시리즈 만화 '소년', 미스터블루 웹툰 키워드 '소년'
+  // (웹소설도 들어갈 수 있게 '소년만화'가 아니라 '소년' - 지금은 소년 웹소설 목록을 주는 플랫폼이 없음)
+  { name: '소년', naverTag: [334, 66], comic: '90', mbToon: 'keywords/webtoon?id=870' },
+  // 학원·스포츠는 다른 장르와 겹쳐도 됨 (현판이면서 학원물이면 두 장르에 다 나옴)
+  // 학원: 네이버 학원물·아카데미물 태그, 카카오웹툰 캠퍼스물·학원로맨스물, 미스터블루 학원/캠퍼스 키워드·만화 학원
+  { name: '학원', naverTag: [95, 262], kwKey: ['캠퍼스물', '학원로맨스물'], mbNovel: 'keywords/novel?id=12',
+    mbToon: 'keywords/webtoon?id=879', mbComic: MB_COMIC('ACTION-FANTASY', '02') },
+  { name: '스포츠', naver: ['SPORTS'], naverTag: [67], mbNovel: 'keywords/novel?id=28',
+    mbToon: 'keywords/webtoon?id=872', mbComic: MB_COMIC('ACTION-FANTASY', '09') },
+  // 미스터블루는 개그·일상 장르 페이지가 없어서 키워드 페이지(웹툰 개그/코믹·일상, 소설 개그물)로
+  { name: '일상·개그', naver: ['DAILY', 'COMIC'], kw: 'comic_everyday_life',
+    mbToon: ['keywords/webtoon?id=866', 'keywords/webtoon?id=876'], mbNovel: 'keywords/novel?id=125' },
   { name: '라노벨', novel: '205', mbNovel: 'novel/genre/fantasy/lightnovel' },
   { name: 'BL', kpToon: '119', kpNovel: '123', novel: '209', comic: '107',
     mbToon: 'webtoon/genre/bl', mbComic: MB_COMIC('BL', '22'), mbNovel: 'novel/genre/bl/' },
 ];
 const FINDER_PLATFORMS = ['네이버웹툰', '카카오웹툰', '카카오페이지', '네이버 시리즈', '미스터블루'];
 
-// 키워드 (장르 대신 고름): 키워드 목록이 있는 곳만 - 네이버웹툰 태그 · 카카오웹툰 키워드 · 미스터블루 키워드
+// 키워드 (장르 대신 고름): 플랫폼마다 다른 태그·키워드를 우리 이름 하나로 묶음
+// 키워드 목록이 있는 곳만 - 네이버웹툰 태그 · 카카오웹툰 키워드 · 미스터블루 키워드
 // (카카오페이지·네이버 시리즈는 키워드별 목록이 없어서 빠짐)
-//   naverTag: 네이버웹툰 태그 번호 / kwKey: 카카오웹툰 키워드 이름 / mbNovel·mbToon·mbComic: 미스터블루 키워드 페이지
+//   naverTag: 네이버웹툰 태그 번호 / kwKey: 카카오웹툰 키워드 이름 / mbNovel·mbToon: 미스터블루 키워드 페이지
+//   (모두 여러 개면 합침) / hot: 검색 화면 "키워드 검색"에 보여줄 것
+// 번호·이름은 2026-10-15 각 플랫폼에서 확인: 네이버 인기 400개 작품의 태그, 카카오웹툰 키워드 검색 결과 수,
+// 미스터블루 키워드 검색 페이지(mrblue.com/keywords/novel, /webtoon)
 const MB_KEY = (type, id) => `keywords/${type}?id=${id}`;
 // (웹툰 키워드 페이지에 웹툰과 만화가 같이 나와서 만화 페이지는 따로 받지 않음)
-const mbKeyword = (novelId, toonId) => ({
-  ...(novelId && { mbNovel: MB_KEY('novel', novelId) }),
-  ...(toonId && { mbToon: MB_KEY('webtoon', toonId) }),
+const mb = (novelIds, toonIds) => ({
+  ...(novelIds && { mbNovel: [].concat(novelIds).map((id) => MB_KEY('novel', id)) }),
+  ...(toonIds && { mbToon: [].concat(toonIds).map((id) => MB_KEY('webtoon', id)) }),
 });
-const FINDER_KEYWORDS = [
-  { name: '회귀', naverTag: '99', kwKey: '회귀물', ...mbKeyword(42, 902) },
-  { name: '빙의', naverTag: '58', kwKey: '빙의물', ...mbKeyword(25, 934) },
-  { name: '환생', naverTag: '319', kwKey: '환생물', ...mbKeyword(38, 901) },
-  { name: '헌터', naverTag: '96' },
-  { name: '먼치킨', naverTag: '53', ...mbKeyword(0, 921) },
-  { name: '아카데미', naverTag: '262' },
-  { name: '아포칼립스', naverTag: '122' },
-  { name: '게임', naverTag: '344', ...mbKeyword(0, 908) },
-  { name: '이세계', naverTag: '78', ...mbKeyword(40, 894) },
-  { name: '복수', naverTag: '57', kwKey: '복수물', ...mbKeyword(24, 885) },
-  { name: '계약결혼', naverTag: '64', ...mbKeyword(44, 964) },
-  { name: '육아', naverTag: '126', kwKey: '육아물', ...mbKeyword(136, 893) },
-  { name: '힐링', naverTag: '130', kwKey: '힐링물', ...mbKeyword(141, 903) },
-  { name: '성장', naverTag: '227', kwKey: '성장물', ...mbKeyword(130, 889) },
+const KEYWORD_GROUPS = [
+  { name: '세계관', icon: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>', keywords: [
+    { name: '이세계', naverTag: [78], ...mb(null, 894), hot: true },
+    { name: '현대', naverTag: [349], ...mb(14, 900) },
+    { name: '동양풍/사극', naverTag: [348, 115, 91], ...mb(5, 884) },
+    { name: '서양풍/중세', naverTag: [350, 354], ...mb(9, 887) },
+    { name: '궁정/귀족', naverTag: [314], ...mb([34, 4]) },
+    { name: '오피스', naverTag: [345, 73], kwKey: ['오피스물'], ...mb(null, 892) },
+    { name: '연예계', naverTag: [71, 220], ...mb(32, 891) },
+    { name: '역사/시대물', naverTag: [347, 188], ...mb(10, 890) },
+    { name: '아포칼립스', naverTag: [122, 378, 419], kwKey: ['재난물'], hot: true },
+    { name: 'SF/미래', naverTag: [103, 352], ...mb(1) },
+  ] },
+  { name: '소재', icon: '<path d="M6 3h12v18l-6-4-6 4z"/>', keywords: [
+    { name: '회귀', naverTag: [99, 187], kwKey: ['회귀물', '타임슬립'], ...mb(42, 902), hot: true },
+    { name: '빙의', naverTag: [58], kwKey: ['빙의물'], ...mb(25, 934), hot: true },
+    { name: '환생', naverTag: [319], kwKey: ['환생물'], ...mb(38, 901), hot: true },
+    { name: '차원이동', naverTag: [128], kwKey: ['차원이동물'], ...mb(40, 897) },
+    { name: '헌터/레이드', naverTag: [96], hot: true },
+    { name: '게임/상태창', naverTag: [344, 343, 112], kwKey: ['레벨업물'], ...mb(null, 908), hot: true },
+    { name: '던전/탑', naverTag: [242, 428] },
+    { name: '초능력', naverTag: [340, 77], ...mb(41, 950) },
+    { name: '마법', naverTag: [336] },
+    { name: '생존/데스게임', naverTag: [342, 186, 339] },
+    { name: '복수', naverTag: [57], kwKey: ['복수물'], ...mb(24, 885), hot: true },
+    { name: '성장', naverTag: [227, 65], kwKey: ['성장물', '성공성장물'], ...mb(130, 889), hot: true },
+    { name: '육아', naverTag: [126], kwKey: ['육아물'], ...mb(136, 893), hot: true },
+    { name: '요리', naverTag: [74, 252], ...mb(null, 937) },
+    { name: '범죄/조직', naverTag: [205, 44], kwKey: ['범죄스릴러물', '조직/암흑가'], ...mb(39, 883) },
+    { name: '전문직', naverTag: [127, 76, 173], kwKey: ['전문직물'], ...mb([37, 20, 22]) },
+    { name: '인외존재', naverTag: [79], ...mb(36, 939) },
+    { name: '오컬트/괴담', naverTag: [124, 41, 376] },
+    { name: '전쟁/군대', naverTag: [332, 116], kwKey: ['전쟁물'], ...mb(15, [941, 896]) },
+    { name: '동물', naverTag: [47], ...mb(null, 919) },
+  ] },
+  { name: '관계', icon: '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15.5 14.5c3 0 5.5 2.2 5.5 5.5"/>', keywords: [
+    { name: '첫사랑', naverTag: [321], ...mb(64, 949) },
+    { name: '짝사랑', naverTag: [189], ...mb(63, 945) },
+    { name: '친구>연인', naverTag: [88, 185], ...mb(65, 951) },
+    { name: '계약/정략결혼', naverTag: [64, 114], ...mb([44, 62, 53], 964), hot: true },
+    { name: '결혼생활', naverTag: [335, 249], ...mb(null, 968) },
+    { name: '혐관/애증', naverTag: [320, 129], ...mb(null, 973) },
+    { name: '라이벌', naverTag: [323], ...mb(47) },
+    { name: '재회', naverTag: [81, 82], ...mb(61, 895) },
+    { name: '사내연애', naverTag: [59], ...mb(50) },
+    { name: '삼각관계', naverTag: [62], ...mb(52, [966, 970]) },
+    { name: '연상연하', naverTag: [70], ...mb(46, [965, 974]) },
+    { name: '신분차이', ...mb(55) },
+    { name: '사제지간', ...mb(51, 969) },
+    { name: '키잡', ...mb([66, 57], 898) },
+    { name: '하렘/역하렘', naverTag: [386, 69], kwKey: ['하렘물'], ...mb(31, 956) },
+    { name: '집착', naverTag: [197], ...mb(54) },
+    { name: '동거', kwKey: ['동거물'], ...mb(18, 918) },
+    { name: '우정', naverTag: [325], ...mb(null, 935) },
+    { name: '가족', naverTag: [324], kwKey: ['가족물'] },
+  ] },
+  { name: '캐릭터', icon: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>', keywords: [
+    { name: '먼치킨', naverTag: [53], ...mb(null, 921), hot: true },
+    { name: '힘숨찐', naverTag: [102] },
+    { name: '악역 주인공', naverTag: [330, 231], ...mb(133) },
+    { name: '걸크러시', naverTag: [37], ...mb(97) },
+    { name: '능력있는', naverTag: [303, 271], ...mb([72, 103]) },
+    { name: '재벌', naverTag: [202, 302, 291], ...mb([85, 115], 982) },
+    { name: '다정한', naverTag: [199, 276], ...mb([73, 104], 979) },
+    { name: '햇살캐', naverTag: [219, 307, 283] },
+    { name: '순정파', naverTag: [298, 275, 409, 412], ...mb([79, 109]) },
+    { name: '대형견', naverTag: [301], ...mb(74) },
+    { name: '집착하는', naverTag: [296, 390], ...mb([90, 118], [986, 992]) },
+    { name: '후회하는', naverTag: [196], ...mb([96, 124], [989, 995]) },
+    { name: '계략적인', naverTag: [297, 179], ...mb([67, 98], 976) },
+    { name: '직진하는', naverTag: [85], ...mb([89, 117], [985, 991]) },
+    { name: '나쁜남자', naverTag: [294], ...mb(69) },
+    { name: '까칠한', naverTag: [43, 389], ...mb([68, 99], [977, 990]) },
+    { name: '철벽', naverTag: [273], ...mb([92, 120], [987, 993]) },
+    { name: '능글맞은', naverTag: [299], ...mb([71, 102], 978) },
+    { name: '무심한', naverTag: [305, 272], ...mb([76, 107], 980) },
+    { name: '상처있는', naverTag: [308, 244], ...mb([78, 108], 1022) },
+    { name: '평범한', naverTag: [304, 279], ...mb([95, 123], [988, 994]) },
+    { name: '미남/미녀', naverTag: [313, 292] },
+  ] },
+  { name: '분위기', icon: '<path d="M12 3v2M5.6 7.6 7 9M18.4 7.6 17 9M3 14h2M19 14h2"/><path d="M8 14a4 4 0 0 1 8 0"/><path d="M4 18h16M8 21h8"/>', keywords: [
+    { name: '힐링', naverTag: [130, 221], kwKey: ['힐링물', '따뜻한'], ...mb(141, 903), hot: true },
+    { name: '설레는', naverTag: [360, 203], kwKey: ['설레는'], ...mb(127) },
+    { name: '로맨틱코미디', naverTag: [385, 270, 176], kwKey: ['로맨틱코미디물'], ...mb(129) },
+    { name: '사이다/통쾌한', naverTag: [119, 253], kwKey: ['통쾌한'], hot: true },
+    { name: '잔잔한/감성', naver: ['SENSIBILITY'], naverTag: [364, 269], ...mb(137) },
+    { name: '눈물샘', naverTag: [357], kwKey: ['가슴 먹먹한'], ...mb([131, 134]) },
+    { name: '피폐한', naverTag: [359], kwKey: ['피폐물', '처절한'], ...mb(139, 899) },
+    { name: '다크한', naverTag: [361, 45] },
+    { name: '미스터리한', naverTag: [250, 63], kwKey: ['미스테리한'], ...mb(138) },
+    { name: '긴장감 있는', naverTag: [362, 375, 380], kwKey: ['긴장감 있는'] },
+    { name: '열혈', naverTag: [363] },
+  ] },
 ];
+const FINDER_KEYWORDS = KEYWORD_GROUPS.flatMap((g) => g.keywords);
 
 // 고른 종류에 맞는 목록만 (types 가 비어 있으면 전체)
 const wantType = (types, ...these) => !types.size || these.some((t) => types.has(t));
 
 // 플랫폼별 장르 목록 받기 → { items, hasMore } (검색 결과와 같은 모양)
 // 한 플랫폼에서 여러 목록(예: 웹툰 + 웹소설)을 받으면 합쳐서 돌려줌
+// (키워드 하나에 태그 여러 개처럼 목록이 여럿이면 일부가 실패해도 받은 것만 보여줌, 모두 실패하면 실패)
 async function mergeLists(jobs) {
-  const lists = await Promise.all(jobs);
+  const results = await Promise.allSettled(jobs);
+  const lists = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+  if (results.length && !lists.length) throw results[0].reason;
   return { items: lists.flatMap((l) => l.items), hasMore: lists.some((l) => l.hasMore) };
 }
 
@@ -1276,16 +1371,18 @@ const FINDER_FETCH = {
       const d = await callServer('naverGenre', code, page);
       return { items: (d.titleList || []).map(naverListItem), hasMore: naverHasMore(d) };
     }),
-    ...(g.naverTag ? [(async () => {
-      const d = await callServer('naverTag', g.naverTag, page);
+    ...[].concat(g.naverTag || []).map(async (tag) => {
+      const d = await callServer('naverTag', String(tag), page);
       return { items: (d.curationViewList || []).map(naverListItem), hasMore: naverHasMore(d) };
-    })()] : []),
+    }),
   ]),
   // 카카오웹툰: 키워드는 키워드 검색 (검색 결과와 같은 모양) / 장르는 장르 랭킹 (100개, 다음 페이지 없음)
   kakaoWebtoon: async (g, page) => {
     if (g.kwKey) {
-      const d = await callServer('kakaoWebtoonKeyword', g.kwKey, page);
-      return { items: SEARCH_SOURCES.kakaoWebtoon.parse(d), hasMore: SEARCH_SOURCES.kakaoWebtoon.hasMore(d) };
+      return mergeLists([].concat(g.kwKey).map(async (key) => {
+        const d = await callServer('kakaoWebtoonKeyword', key, page);
+        return { items: SEARCH_SOURCES.kakaoWebtoon.parse(d), hasMore: SEARCH_SOURCES.kakaoWebtoon.hasMore(d) };
+      }));
     }
     if (page > 0) return { items: [], hasMore: false };
     const d = await callServer('kakaoWebtoonRank', g.kw, 0);
@@ -1380,21 +1477,76 @@ function parseMrblueGenre(html, type) {
 // genre 와 keyword 는 둘 중 하나만 (하나를 고르면 다른 하나는 풀림)
 let finderPick = { genre: '', keyword: '', types: new Set(), platforms: new Set() };
 
-function openFinder() {
+// 작품 찾기 화면의 탭 (info: 장르·종류·플랫폼 / keyword: 키워드), 펼친 키워드 묶음
+let finderTab = 'info';
+const kwOpen = new Set();
+
+function openFinder(tab = 'info') {
+  finderTab = tab;
+  kwOpen.clear();
+  $('kwFilter').value = '';
   renderFinder();
   openOverlay('finderPage');
   $('finderPage').scrollTop = 0;
 }
 
+const pickHTML = (kind, value, label, on) =>
+  `<button type="button" class="f-pick${on ? ' active' : ''}" data-pick="${kind}" data-value="${esc(value)}">${esc(label)}</button>`;
+
 function renderFinder() {
-  const pick = (kind, value, label, on) =>
-    `<button type="button" class="f-pick${on ? ' active' : ''}" data-pick="${kind}" data-value="${esc(value)}">${esc(label)}</button>`;
+  // 탭: 고른 것이 있는 탭에는 점 표시
+  const has = { info: !!finderPick.genre || finderPick.types.size > 0 || finderPick.platforms.size > 0, keyword: !!finderPick.keyword };
+  document.querySelectorAll('#finderPage .f-tab').forEach((t) => {
+    t.classList.toggle('active', t.dataset.tab === finderTab);
+    t.classList.toggle('dot', has[t.dataset.tab]);
+    t.setAttribute('aria-selected', t.dataset.tab === finderTab);
+  });
+  $('finderInfo').hidden = finderTab !== 'info';
+  $('finderKw').hidden = finderTab !== 'keyword';
+  $('finderPage').classList.toggle('kw-mode', finderTab === 'keyword');
+
   // 장르는 검색 화면 "장르별 검색"과 같은 아이콘으로
   $('finderGenres').innerHTML = FINDER_GENRES.map((g) =>
     genreIconHTML(g.name, `data-pick="genre" data-value="${esc(g.name)}"`, finderPick.genre === g.name)).join('');
-  $('finderKeywords').innerHTML = FINDER_KEYWORDS.map((k) => pick('keyword', k.name, k.name, finderPick.keyword === k.name)).join('');
-  $('finderTypes').innerHTML = Object.entries(TYPES).map(([t, label]) => pick('types', t, label, finderPick.types.has(t))).join('');
-  $('finderPlatforms').innerHTML = FINDER_PLATFORMS.map((p) => pick('platforms', p, p, finderPick.platforms.has(p))).join('');
+  $('finderTypes').innerHTML = Object.entries(TYPES).map(([t, label]) => pickHTML('types', t, label, finderPick.types.has(t))).join('');
+  $('finderPlatforms').innerHTML = FINDER_PLATFORMS.map((p) => pickHTML('platforms', p, p, finderPick.platforms.has(p))).join('');
+  renderKeywordCards();
+
+  // 아래 버튼에 고른 장르·키워드 이름
+  const picked = finderPick.genre || finderPick.keyword;
+  $('finderRun').textContent = picked ? `'${picked}' 작품 찾기` : '작품 찾기';
+}
+
+// 키워드 탭: 묶음(세계관·소재·관계·캐릭터·분위기)마다 카드, 처음엔 세 줄까지만 보이고 ⌄ 로 펼침
+// 검색칸에 쓰면 이름에 그 글자가 들어간 키워드만 (모든 묶음을 펼쳐서)
+function renderKeywordCards() {
+  const q = $('kwFilter').value.replace(/\s+/g, '');
+  const match = (k) => !q || k.name.replace(/[\s/·>]/g, '').includes(q.replace(/[/·>]/g, ''));
+  const cards = KEYWORD_GROUPS.map((g) => {
+    const list = g.keywords.filter(match);
+    if (!list.length) return '';
+    // 고른 키워드가 들어 있는 묶음은 펼쳐 둠
+    const open = q || kwOpen.has(g.name) || list.some((k) => k.name === finderPick.keyword);
+    return `
+      <section class="kw-card${open ? ' open' : ''}" data-group="${esc(g.name)}">
+        <h3 class="kw-head"><span class="kw-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${g.icon}</svg></span>${esc(g.name)}</h3>
+        <div class="picks kw-chips">${list.map((k) => pickHTML('keyword', k.name, k.name, finderPick.keyword === k.name)).join('')}</div>
+        <button type="button" class="kw-fold" data-fold="${esc(g.name)}" aria-label="${open ? '접기' : '펼치기'}" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+      </section>`;
+  }).join('');
+  $('finderKeywords').innerHTML = cards || '<p class="msg">찾는 키워드가 없어요.</p>';
+  // 세 줄이 넘는 묶음에만 펼치기 버튼 (검색 중에는 모두 펼쳐서 버튼 없음)
+  if (!q && finderTab === 'keyword') {
+    requestAnimationFrame(() => {
+      document.querySelectorAll('#finderKeywords .kw-card').forEach((card) => {
+        const chips = card.querySelector('.kw-chips');
+        const rows = new Set([...chips.children].map((c) => c.offsetTop)).size;
+        card.querySelector('.kw-fold').hidden = rows <= 3;
+      });
+    });
+  }
 }
 
 // 고른 장르·종류·플랫폼·연재 상태로 받아 올 곳
@@ -1535,7 +1687,7 @@ function showSearchIntro() {
   $('genreIcons').innerHTML = FINDER_GENRES.map((g) => genreIconHTML(g.name, `data-genre="${esc(g.name)}"`)).join('');
 
   // 키워드 검색: 누르면 그 키워드로 작품 찾기 (제목 검색이 아니라 플랫폼 키워드·태그 목록)
-  $('suggestKeywords').innerHTML = FINDER_KEYWORDS.map((k) =>
+  $('suggestKeywords').innerHTML = FINDER_KEYWORDS.filter((k) => k.hot).map((k) =>
     `<button type="button" class="chip chip-word" data-keyword="${esc(k.name)}">${esc(k.name)}</button>`).join('');
 }
 
@@ -1551,14 +1703,15 @@ function genreIconHTML(name, attrs, active = false) {
 
 // 장르별 검색 아이콘: 장르마다 색 + 직접 그린 선 그림 (24x24)
 const GENRE_ICONS = {
-  로맨스: { color: '#e8456b', path: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>' },
+  '순정·로맨스': { color: '#e8456b', path: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>' },
   로판: { color: '#9b51e0', path: '<path d="M4 8l4 4 4-7 4 7 4-4-2 11H6z"/>' },
   판타지: { color: '#4a6cf7', path: '<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/><path d="M19 3v3M17.5 4.5h3"/>' },
   현판: { color: '#1b8ad6', path: '<path d="M3 21h18M5 21V10h5v11M10 21V4h9v17M13 8h3M13 12h3M13 16h3"/>' },
   무협: { color: '#9a6a3a', path: '<path d="M20 4 9 15M14 4h6v6M7 13l4 4M4 20l3-3"/>' },
   액션: { color: '#f06b1a', path: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>' },
   드라마: { color: '#2f9e5c', path: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>' },
-  스릴러: { color: '#4b4f63', path: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>' },
+  '공포·스릴러': { color: '#4b4f63', path: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>' },
+  소년: { color: '#e5484d', path: '<path d="M12 22c4 0 7-3 7-7 0-5-5-7-5-12-3 2-5 5-5 8-1-1-2-2-2-4-2 2-2 5-2 7 0 5 3 8 7 8z"/>' },
   '일상·개그': { color: '#d99a00', path: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9.5h0M15 9.5h0"/>' },
   감성: { color: '#2a9d8f', path: '<path d="M20 14A8 8 0 1 1 10 4a6 6 0 0 0 10 10z"/>' },
   학원: { color: '#3b66d1', path: '<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c3 2 9 2 12 0v-5"/>' },
@@ -2263,6 +2416,21 @@ function bindEvents() {
   $('finderBanner').addEventListener('click', openFinder);
   $('finderBack').addEventListener('click', closeOverlay);
   $('finderPage').addEventListener('click', (e) => {
+    const tab = e.target.closest('.f-tab');
+    if (tab) {
+      finderTab = tab.dataset.tab;
+      renderFinder();
+      $('finderPage').scrollTop = 0;
+      return;
+    }
+    const fold = e.target.closest('[data-fold]');
+    if (fold) {
+      const name = fold.dataset.fold;
+      if (kwOpen.has(name)) kwOpen.delete(name); else kwOpen.add(name);
+      fold.closest('.kw-card').classList.toggle('open', kwOpen.has(name));
+      fold.setAttribute('aria-label', kwOpen.has(name) ? '접기' : '펼치기');
+      return;
+    }
     const btn = e.target.closest('[data-pick]');
     if (!btn) return;
     const { pick, value } = btn.dataset;
@@ -2279,9 +2447,13 @@ function bindEvents() {
   });
   $('finderReset').addEventListener('click', () => {
     finderPick = { genre: '', keyword: '', types: new Set(), platforms: new Set() };
+    $('kwFilter').value = '';
     renderFinder();
   });
   $('finderRun').addEventListener('click', runFinder);
+  // 키워드 검색칸: 쓰는 대로 걸러 보여줌 (엔터는 키보드만 내림)
+  $('kwFilter').addEventListener('input', renderKeywordCards);
+  $('kwForm').addEventListener('submit', (e) => { e.preventDefault(); $('kwFilter').blur(); });
   // ＋ 버튼: 피드에서는 한줄평 쓰기, 나머지 화면에서는 작품 검색
   $('addBtn').addEventListener('click', () => (view.mode === 'feed' ? openReviewPage() : openSearch()));
 
@@ -2310,6 +2482,7 @@ function bindEvents() {
       return;
     }
     if (e.target.closest('#genreMore')) { openFinder(); return; }
+    if (e.target.closest('#keywordMore')) { openFinder('keyword'); return; }
     const word = e.target.closest('[data-q]');
     if (word) runSearch(word.dataset.q);
     if (e.target.closest('#recentClear')) { saveRecentSearches([]); showSearchIntro(); }

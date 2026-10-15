@@ -17,7 +17,7 @@
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
   <!-- 글꼴: Pretendard -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=55">
+  <link rel="stylesheet" href="style.css?v=56">
 </head>
 <body>
   <main>
@@ -159,23 +159,32 @@
   <button id="addBtn" class="fab" aria-label="작품 검색해서 추가" hidden>＋</button>
 
   <!-- ===== 작품 찾기 (홈 배너에서 열림, 찾으면 검색 화면에 결과가 나옴) ===== -->
+  <!-- 정보 탭(장르·종류·플랫폼) / 키워드 탭(세계관·소재·관계·캐릭터·분위기). 장르와 키워드는 둘 중 하나만 골라요 -->
   <section id="finderPage" class="overlay" hidden>
-    <div class="overlay-top">
+    <div class="overlay-top finder-top">
       <button type="button" id="finderBack" class="back-btn" aria-label="뒤로">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg>
       </button>
-      <h2 class="overlay-title">작품 찾기</h2>
+      <div class="finder-tabs" role="tablist">
+        <button type="button" class="f-tab" role="tab" data-tab="info">정보</button>
+        <button type="button" class="f-tab" role="tab" data-tab="keyword">키워드</button>
+      </div>
     </div>
-    <div class="overlay-body finder">
+    <div id="finderInfo" class="overlay-body finder">
       <h3>장르</h3>
       <div id="finderGenres" class="picks"></div>
-      <h3>키워드 <small class="finder-sub">장르 대신 골라요</small></h3>
-      <div id="finderKeywords" class="picks"></div>
       <h3>종류</h3>
       <div id="finderTypes" class="picks"></div>
       <h3>플랫폼</h3>
       <div id="finderPlatforms" class="picks"></div>
       <p class="finder-note">플랫폼을 고르면 그 플랫폼에 있는 작품만 보여요. 다른 플랫폼에도 있으면 같이 표시돼요.</p>
+    </div>
+    <div id="finderKw" class="finder finder-kw" hidden>
+      <form id="kwForm" class="kw-search" role="search">
+        <input id="kwFilter" type="search" placeholder="키워드를 검색하세요" autocomplete="off" enterkeyhint="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      </form>
+      <div id="finderKeywords"></div>
     </div>
     <div class="finder-bar">
       <button type="button" id="finderReset" class="finder-reset">
@@ -216,7 +225,11 @@
         </button>
       </div>
       <div id="genreIcons" class="genre-row"></div>
-      <div class="sec-head"><h2>키워드 검색</h2></div>
+      <div class="sec-head">
+        <button type="button" id="keywordMore" class="sec-link">키워드 검색
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+        </button>
+      </div>
       <div id="suggestKeywords" class="chips"></div>
       <button type="button" id="manualAdd" class="manual-add">찾는 작품이 없나요? <b>직접 입력하기</b></button>
     </div>
@@ -441,6 +454,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=55"></script>
+  <script src="app.js?v=56"></script>
 </body>
 </html>
