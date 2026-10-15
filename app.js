@@ -138,6 +138,7 @@ const PLATFORM_LINKS = {
   seriesComic: (id) => `https://series.naver.com/comic/detail.series?productNo=${id}`,
   kakao: (id) => `https://page.kakao.com/content/${id}`,
   ridi: (id) => `https://ridibooks.com/books/${id}`,
+  lezhin: (alias) => `https://www.lezhin.com/ko/comic/${encodeURIComponent(alias)}`,
 };
 
 function linkOf(source, sourceId) {
@@ -842,6 +843,27 @@ const naverSource = (platform) => ({
 
 const SEARCH_SOURCES = {
   naverWebtoon: naverSource('네이버웹툰'),
+  // 레진코믹스: 검색 결과를 한 번에 다 줌 (페이지 없음, 만화/소설 묶음으로 옴)
+  // 표지는 결과에 없어서 작품 번호로 만듦 (세로 표지 tall.webp 를 작게)
+  // TODO: 나중에 성인 인증을 넣으면 19세(adult) 작품 표지는 인증한 사람에게만 보여주기
+  lezhin: {
+    platform: '레진코믹스',
+    parse: (data) => (data.data?.sections || []).flatMap((sec) => (sec.items || []).map((c) => {
+      const novel = sec.type === 'novel';
+      return {
+        sourceId: c.alias,
+        title: c.title,
+        author: (c.authors || []).map((a) => a.name).join(', '),
+        cover: !novel && c.id ? `https://ccdn.lezhin.com/v2/comics/${c.id}/images/tall.webp?updated=${c.updatedAt || ''}&width=320` : '',
+        type: novel ? 'webnovel' : c.book ? 'comic' : 'webtoon',
+        url: `https://www.lezhin.com/ko/${novel ? 'novel' : 'comic'}/${encodeURIComponent(c.alias)}`,
+        note: '',
+        ongoing: '',
+        adult: !!c.adult,
+      };
+    })),
+    hasMore: () => false,
+  },
   naverBest: naverSource('네이버 베스트도전'),
   naverChallenge: naverSource('네이버 도전만화'),
   seriesNovel: seriesSource('novel'),
@@ -956,8 +978,26 @@ function uniqueAuthors(author) {
 // ----- 6-2. 전체 검색 -----
 // 검색창 하나로 모든 플랫폼을 한꺼번에 검색하고, 같은 작품은 하나로 묶어서 보여줌
 // (앞에 있을수록 대표 정보(제목·작가·표지)로 먼저 쓰임 - 아마추어 연재인 베스트도전/도전만화는 맨 뒤)
-const ALL_SOURCES = ['naverWebtoon', 'kakaoWebtoon', 'kakao', 'seriesNovel', 'seriesComic', 'mrblue', 'naverBest', 'naverChallenge'];
+const ALL_SOURCES = ['naverWebtoon', 'kakaoWebtoon', 'kakao', 'seriesNovel', 'seriesComic', 'mrblue', 'lezhin', 'naverBest', 'naverChallenge'];
 const sourceRank = (source) => ALL_SOURCES.indexOf(source);
+// 제목 검색할 곳: 도전만화는 검색에서 뺌 (베스트도전만 남김, 예전에 담은 도전만화 작품은 그대로 열림)
+const SEARCH_TARGETS = ALL_SOURCES.filter((s) => s !== 'naverChallenge');
+
+// 결과를 가져오지 않고 버튼으로만 연결하는 곳 (프로그램 요청을 막아 둔 곳 - 리디는 봇 차단·약관,
+// 네이버웹소설은 robots.txt 전체 금지). 누르면 휴대폰 브라우저에서 그 사이트 검색 화면이 열림
+const LINK_OUT = [
+  { name: '리디', url: (q) => `https://ridibooks.com/search?q=${encodeURIComponent(q)}` },
+  { name: '네이버웹소설', url: (q) => `https://novel.naver.com/search?keyword=${encodeURIComponent(q)}` },
+];
+const linkOutHTML = (q) => !q ? '' : `
+  <div class="link-out">
+    <p>다른 곳에서도 찾아보기</p>
+    <div class="lo-row">${LINK_OUT.map((l) => `
+      <a class="lo-btn" href="${esc(l.url(q))}" target="_blank" rel="noopener">${esc(l.name)}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>
+      </a>`).join('')}
+    </div>
+  </div>`;
 
 // 같은 작품인지 비교하려고 제목에서 띄어쓰기·기호·[독점] 같은 표시를 뺌
 function titleKey(title) {
@@ -1025,7 +1065,7 @@ async function searchPlatform(more = false, fromFinder = false) {
     const q = $('s-query').value.trim();
     if (!q) return;
     searchState = { q, groups: new Map(), pages: {}, failed: [], loading: false, filter: { type: 'all', platform: 'all', ongoing: 'all' } };
-    targets = ALL_SOURCES.map((source) => ({ source, page: 0 }));
+    targets = SEARCH_TARGETS.map((source) => ({ source, page: 0 }));
     box.innerHTML = '<p class="msg">모든 플랫폼에서 찾는 중…</p>';
   }
 
@@ -1089,9 +1129,9 @@ function renderSearchResults() {
     ? `<p class="msg"><small>${finder ? '불러오지 못한 곳' : '검색하지 못한 곳'}: ${esc(searchState.failed.join(', '))}</small></p>`
     : '';
   if (!all.length) {
-    box.innerHTML = (searchState.failed.length === (finder ? finder.sources.length : ALL_SOURCES.length)
+    box.innerHTML = (searchState.failed.length === (finder ? finder.sources.length : SEARCH_TARGETS.length)
       ? '<p class="msg">검색에 실패했어요. 잠시 후 다시 해보세요.</p>'
-      : '<p class="msg">검색 결과가 없어요.</p>') + failed;
+      : '<p class="msg">검색 결과가 없어요.</p>') + failed + (finder ? '' : linkOutHTML(searchState.q));
     return;
   }
 
@@ -1123,7 +1163,7 @@ function renderSearchResults() {
   box.innerHTML = filters + `<p class="s-count">${esc(countLabel)} ${groups.length}${hasMore ? '+' : ''}</p>`
     + (groups.length ? '' : '<p class="msg">조건에 맞는 작품이 없어요.</p>')
     + (finder ? `<div class="s-grid">${list}</div>` : list) + failed + (!hasMore
-    ? `<p class="msg">${finder ? '작품을 모두 봤어요.' : '검색 결과를 모두 봤어요.'}</p>`
+    ? `<p class="msg">${finder ? '작품을 모두 봤어요.' : '검색 결과를 모두 봤어요.'}</p>${finder ? '' : linkOutHTML(searchState.q)}`
     : searchState.moreFailed
       // 이어서 불러오기가 실패했으면 저절로 다시 부르지 않고 버튼으로
       ? `<button type="button" id="s-more" class="ghost s-more">다시 불러오기</button>`

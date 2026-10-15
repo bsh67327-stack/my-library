@@ -1104,3 +1104,14 @@ dialog button:focus { outline: none; }
     border-radius: 999px; background: var(--border);
   }
 }
+
+/* 제목 검색 결과 맨 아래: 결과를 가져오지 않는 곳(리디·네이버웹소설)은 그 사이트 검색으로 바로 가는 버튼 */
+.link-out { margin: 4px 0 24px; padding: 16px; border-radius: 14px; background: var(--surface-2); }
+.link-out p { margin: 0 0 10px; font-size: 0.84rem; color: var(--sub); }
+.lo-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.lo-btn {
+  display: inline-flex; align-items: center; gap: 4px; padding: 8px 12px 8px 14px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--bg);
+  color: var(--text); font-size: 0.88rem; text-decoration: none;
+}
+.lo-btn svg { width: 14px; height: 14px; color: var(--muted); }
