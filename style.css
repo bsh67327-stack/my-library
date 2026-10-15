@@ -1123,3 +1123,25 @@ dialog button:focus { outline: none; }
 .status-line { display: flex; align-items: center; gap: 6px; margin-top: 5px; min-width: 0; }
 .tile .status-line .status { margin-top: 0; }
 .status-line .progress-text, .item-meta .progress-text { font-size: 0.72rem; color: var(--sub); }
+
+/* 못 불러온 표지(19세 작품 등): 같은 세로 비율의 회색 칸 + 가운데 흰 글씨 */
+.blocked-cover {
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  aspect-ratio: 3 / 4; padding: 6px; border-radius: 8px;
+  background: #8e8e93; color: #fff; font-size: 0.72rem; font-weight: 500; line-height: 1.35; word-break: keep-all;
+}
+/* 표지 칸 안(서재·캘린더·작품 정보)에서는 칸을 꽉 채움 */
+.cover > .blocked-cover, .thumb > .blocked-cover, .cal-cover > .blocked-cover {
+  position: absolute; inset: 0; z-index: 0; border-radius: inherit; aspect-ratio: auto;
+}
+.thumb > .blocked-cover, .cal-cover > .blocked-cover { font-size: 0.56rem; padding: 3px; }
+.cover:has(.blocked-cover) .cover-fallback, .thumb:has(.blocked-cover) .cover-fallback, .cal-cover:has(.blocked-cover) .cal-fallback { visibility: hidden; }
+.hero-cover .blocked-cover { font-size: 1rem; }
+/* 검색 결과: 목록은 표지 자리(84px), 카드는 표지 칸 너비 */
+.s-item > .blocked-cover { width: 84px; flex-shrink: 0; font-size: 0.66rem; }
+.s-card-cover > .blocked-cover { width: 100%; font-size: 0.8rem; }
+
+/* 처음부터 표지가 없는 작품: 글씨 없이 같은 회색 칸만 (불러오는 중에는 연회색) */
+.cover, .thumb, .cal-cover, .cal-fallback { background: #8e8e93; }
+.cover-fallback, .cal-fallback { color: transparent; }
+.s-item img:not([src]) { background: #8e8e93; }

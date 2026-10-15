@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 68;
+const APP_VERSION = 70;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -123,6 +123,19 @@ function looksJapaneseAuthor(names) {
   return list.length > 0 && !list.some(isCompanyName) && list.some(clearlyJapanese) && list.every(maybeJapanese);
 }
 
+// 표지 그림을 못 불러오면(대부분 로그인해야 볼 수 있는 19세 작품) 같은 자리·같은 크기의 회색 칸에 "19세 이상 관람가"
+// (표지가 원래 없는 작품은 여기로 오지 않고 제목 글자 칸 그대로)
+const failedCovers = new Set();
+function coverError(img) {
+  const src = img.getAttribute('src');
+  if (src) failedCovers.add(src);
+  const box = document.createElement('span');
+  box.className = 'blocked-cover';
+  box.dataset.src = src || '';
+  box.textContent = '19세 이상 관람가';
+  img.replaceWith(box);
+}
+
 // 목록을 다시 그려도 화면에 이미 있던 표지 그림(같은 주소)은 새로 만들지 않고 그대로 옮겨 씀
 // - 다 받은 그림은 그대로, 받는 중이던 그림은 이어서 받음 → 새로 들어온 작품만 새로 받아서 표지가 깜빡이지 않음
 function setHTMLKeepImages(el, html) {
@@ -133,6 +146,8 @@ function setHTMLKeepImages(el, html) {
   });
   el.innerHTML = html;
   el.querySelectorAll('img[src]').forEach((img) => {
+    // 전에 못 불러온 표지는 다시 받지 않고 바로 "19세 이상 관람가" 칸으로
+    if (failedCovers.has(img.getAttribute('src'))) { coverError(img); return; }
     const prev = old.get(img.getAttribute('src'));
     if (!prev) return;
     old.delete(img.getAttribute('src'));
@@ -311,7 +326,7 @@ function coverHTML(w, cls) {
   return `
     <div class="${cls}">
       <span class="cover-fallback">${esc(w.title)}</span>
-      ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+      ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="coverError(this)">` : ''}
     </div>`;
 }
 
@@ -321,7 +336,7 @@ function cardHTML(w) {
     <article class="card tile" data-id="${esc(w.id)}">
       <div class="cover">
         <span class="cover-fallback">${esc(w.title)}</span>
-        ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+        ${w.cover ? `<img src="${esc(w.cover)}" alt="" loading="lazy" onerror="coverError(this)">` : ''}
         ${badgesHTML(w)}
       </div>
       <div class="tile-info">
@@ -545,7 +560,7 @@ function renderCalendar() {
         ${first ? `
           <span class="cal-cover${list.length > 1 ? ' multi' : ''}">
             <span class="cal-fallback">${esc(first.title)}</span>
-            ${first.cover ? `<img src="${esc(first.cover)}" alt="${esc(first.title)}" loading="lazy" onerror="this.remove()">` : ''}
+            ${first.cover ? `<img src="${esc(first.cover)}" alt="${esc(first.title)}" loading="lazy" onerror="coverError(this)">` : ''}
             ${list.length > 1 ? `<span class="cal-more">+${list.length - 1}</span>` : ''}
           </span>` : ''}
       </button>`;
@@ -981,8 +996,9 @@ function uniqueAuthors(author) {
 // (앞에 있을수록 대표 정보(제목·작가·표지)로 먼저 쓰임 - 아마추어 연재인 베스트도전/도전만화는 맨 뒤)
 const ALL_SOURCES = ['naverWebtoon', 'kakaoWebtoon', 'kakao', 'seriesNovel', 'seriesComic', 'mrblue', 'lezhin', 'naverBest', 'naverChallenge'];
 const sourceRank = (source) => ALL_SOURCES.indexOf(source);
-// 제목 검색할 곳: 도전만화는 검색에서 뺌 (베스트도전만 남김, 예전에 담은 도전만화 작품은 그대로 열림)
-const SEARCH_TARGETS = ALL_SOURCES.filter((s) => s !== 'naverChallenge');
+// 제목 검색·다른 플랫폼 찾기에 쓰는 곳: 네이버 베스트도전·도전만화는 뺌 (정식 연재가 아니라서)
+// (예전에 담은 베스트도전·도전만화 작품은 그대로 열리고 작품 정보도 받음)
+const SEARCH_TARGETS = ALL_SOURCES.filter((s) => s !== 'naverChallenge' && s !== 'naverBest');
 
 
 // 같은 작품인지 비교하려고 제목에서 띄어쓰기·기호·[독점] 같은 표시를 뺌
@@ -1182,7 +1198,7 @@ function searchCoverHTML(g, big = false) {
   const bg = /^#[0-9a-f]{3,8}$/i.test(cover?.coverBg || '') ? ` style="background:${cover.coverBg}"` : '';
   const src = big ? bigCover(cover?.cover) : cover?.cover;
   // 표지가 없으면 src 를 빼서 깨진 그림 표시 대신 빈 칸으로
-  return `<img${src ? ` src="${esc(src)}"` : ''} alt="" loading="lazy"${bg}>`;
+  return `<img${src ? ` src="${esc(src)}" onerror="coverError(this)"` : ''} alt="" loading="lazy"${bg}>`;
 }
 
 // 크게 보이는 곳(카드·작품 정보·서재)에 쓸 큰 표지 주소
@@ -1292,10 +1308,9 @@ const FINDER_GENRES = [
 ];
 const FINDER_PLATFORMS = ['네이버', '카카오페이지', '카카오웹툰', '미스터블루', '레진코믹스'];
 // 플랫폼 고르는 버튼 순서
-const FILTER_ORDER = ['네이버', '카카오페이지', '카카오웹툰', '미스터블루', '레진코믹스', '네이버 베스트도전'];
+const FILTER_ORDER = ['네이버', '카카오페이지', '카카오웹툰', '미스터블루', '레진코믹스'];
 
 // 플랫폼 고르는 버튼에서만 네이버웹툰 + 네이버 시리즈를 "네이버" 하나로 묶음 (카드 배지는 플랫폼마다 따로)
-// (베스트도전은 정식 연재가 아니라 따로 둠)
 const FILTER_GROUPS = { 네이버: ['네이버웹툰', '네이버 시리즈'] };
 const filterPlatformOf = (platform) => Object.keys(FILTER_GROUPS).find((k) => FILTER_GROUPS[k].includes(platform)) || platform;
 const inFilterPlatform = (platform, picked) => platform === picked || !!FILTER_GROUPS[picked]?.includes(platform);
@@ -1988,11 +2003,12 @@ function addOtherPlatforms(group) {
 
 // 제목 검색 결과(같은 제목 작품만)를 휴대폰에 7일 저장 - 같은 작품을 다시 볼 때 플랫폼에 다시 묻지 않게
 // (검색에 실패한 플랫폼이 있으면 저장하지 않고 다음에 다시 물어봄)
-const LOOKUP_KEY = 'titleLookup1';
+const LOOKUP_KEY = 'titleLookup2'; // 베스트도전을 뺀 뒤로 새로 저장 (예전 저장분은 안 씀)
 const LOOKUP_MS = 7 * 24 * 60 * 60 * 1000;
 function readLookups() {
   try { return JSON.parse(localStorage.getItem(LOOKUP_KEY)) || {}; } catch { return {}; }
 }
+try { localStorage.removeItem('titleLookup1'); } catch { /* 예전 저장분 정리 */ }
 async function titleLookup(title) {
   const key = titleKey(title);
   const hit = readLookups()[key];
