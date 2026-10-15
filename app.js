@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 58;
+const APP_VERSION = 59;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -1161,13 +1161,15 @@ function renderSearchResults() {
       ? `<button type="button" id="s-more" class="ghost s-more">다시 불러오기</button>`
       : `<p id="s-more" class="msg s-more-auto" data-auto="1"><span class="spinner small"></span></p>`);
   watchMore();
+  watchCards();
 }
 
 // 검색 결과 한 작품의 표지 (카카오웹툰 캐릭터 그림은 작품 배경색을 깔아 줌)
 function searchCoverHTML(g) {
   const cover = coverItem(g);
   const bg = /^#[0-9a-f]{3,8}$/i.test(cover?.coverBg || '') ? ` style="background:${cover.coverBg}"` : '';
-  return `<img src="${esc(cover?.cover || '')}" alt="" loading="lazy"${bg}>`;
+  // 표지가 없으면 src 를 빼서 깨진 그림 표시 대신 빈 칸으로
+  return `<img${cover?.cover ? ` src="${esc(cover.cover)}"` : ''} alt="" loading="lazy"${bg}>`;
 }
 const groupPlatforms = (g) => [...new Set(g.items.map((i) => SEARCH_SOURCES[i.source].platform))];
 
@@ -1916,44 +1918,131 @@ async function loadGroupInfo(state) {
   renderDetail();
 }
 
-// 작품 찾기에서 고른 작품을 그 제목으로 검색해서 (사용자가 제목을 검색한 것과 같은 요청)
+// 작품 찾기 결과의 작품을 그 제목으로 검색해서 (사용자가 제목을 검색한 것과 같은 요청)
 // 제목 검색과 같은 기준(제목·종류가 같으면 같은 작품)으로 다른 플랫폼 결과를 묶음에 넣음
 // - 그 플랫폼에는 그 장르·키워드가 안 붙어 있어도 작품이 있으면 아이콘이 같이 보임
-// - 작품마다 한 번만 (결과 목록 카드의 플랫폼 아이콘도 같이 늘어남)
-async function addOtherPlatforms(group) {
-  if (group.searched) return;
-  group.searched = true;
-  const main = mainItem(group);
-  const key = titleKey(main.title);
-  const targets = SEARCH_TARGETS.filter((s) => !group.items.some((i) => i.source === s));
-  const results = await Promise.allSettled(targets.map(async (source) => [source, (await fetchSearch(source, main.title, 0)).items]));
-  let added = false;
-  const rank = Math.min(...group.items.map((i) => i.rank ?? 9999)) + 0.5;
+// - 제목이 같고 형태가 다른 작품(원작 소설 ↔ 웹툰판)은 묶지 않고 원작 카드 바로 뒤에 따로 카드로
+// - 결과 카드가 화면에 보이면 저절로 (두 작품씩 차례로), 작품을 열 때도 (아직 안 했으면)
+function addOtherPlatforms(group) {
+  group.lookup ||= (async () => {
+    group.searched = true;
+    const main = mainItem(group);
+    const found = await titleLookup(main.title);
+    const rank = Math.min(...group.items.map((i) => i.rank ?? 9999)) + 0.5;
+    const touched = [group];
+    for (const it of found) {
+      if (it.type === main.type) {
+        if (!group.items.some((i) => i.source === it.source)) group.items.push({ ...it });
+      } else if (isNovel(it.type) !== isNovel(main.type) && searchState.finder) {
+        const gKey = `${titleKey(main.title)}|${it.type}`;
+        let other = searchState.groups.get(gKey);
+        if (!other) {
+          other = { key: gKey, items: [], order: searchState.groups.size };
+          searchState.groups.set(gKey, other);
+        }
+        if (!other.items.some((i) => i.source === it.source)) other.items.push({ ...it, rank });
+        if (!touched.includes(other)) touched.push(other);
+      }
+    }
+    if (searchState.finder && searchState.groups.get(group.key) === group) refreshCards(group, touched);
+  })();
+  return group.lookup;
+}
+
+// 제목 검색 결과(같은 제목 작품만)를 휴대폰에 7일 저장 - 같은 작품을 다시 볼 때 플랫폼에 다시 묻지 않게
+// (검색에 실패한 플랫폼이 있으면 저장하지 않고 다음에 다시 물어봄)
+const LOOKUP_KEY = 'titleLookup1';
+const LOOKUP_MS = 7 * 24 * 60 * 60 * 1000;
+function readLookups() {
+  try { return JSON.parse(localStorage.getItem(LOOKUP_KEY)) || {}; } catch { return {}; }
+}
+async function titleLookup(title) {
+  const key = titleKey(title);
+  const hit = readLookups()[key];
+  if (hit && Date.now() - hit.t < LOOKUP_MS) return hit.found;
+  const results = await Promise.allSettled(SEARCH_TARGETS.map(async (source) => [source, (await fetchSearch(source, title, 0)).items]));
+  const found = [];
   for (const r of results) {
     if (r.status !== 'fulfilled') continue;
     const [source, items] = r.value;
-    const same = items.find((i) => titleKey(i.title) === key && i.type === main.type);
-    if (same && !group.items.some((i) => i.source === source)) {
-      group.items.push({ ...same, source });
-      added = true;
-    }
-    // 제목이 같은데 형태가 다른 작품(원작 소설 ↔ 웹툰판)은 묶지 않고 따로 카드로 넣음
-    // (장르·키워드는 원작과 같다고 보고 같은 결과에 바로 옆에 보여줌)
-    const otherForm = items.find((i) => titleKey(i.title) === key && isNovel(i.type) !== isNovel(main.type));
-    if (otherForm && searchState.finder) {
-      const gKey = `${key}|${otherForm.type}`;
-      let other = searchState.groups.get(gKey);
-      if (!other) {
-        other = { key: gKey, items: [], order: searchState.groups.size, searched: false };
-        searchState.groups.set(gKey, other);
-      }
-      if (!other.items.some((i) => i.source === source)) {
-        other.items.push({ ...otherForm, source, rank });
-        added = true;
-      }
+    // 플랫폼마다 종류별로 제목이 같은 첫 번째 결과만 (소개 글은 저장하지 않음 - 정보 화면에서 다시 받음)
+    for (const it of items.filter((i) => titleKey(i.title) === key)) {
+      if (!found.some((f) => f.source === source && f.type === it.type)) found.push({ ...it, source, desc: '' });
     }
   }
-  if (added && searchState.finder) renderSearchResults();
+  if (results.every((r) => r.status === 'fulfilled')) {
+    try {
+      const all = readLookups();
+      all[key] = { t: Date.now(), found };
+      // 오래된 것부터 지워서 300개까지만
+      const keys = Object.keys(all).sort((a, b) => all[b].t - all[a].t);
+      for (const k of keys.slice(300)) delete all[k];
+      for (const k of keys) if (Date.now() - all[k].t >= LOOKUP_MS) delete all[k];
+      localStorage.setItem(LOOKUP_KEY, JSON.stringify(all));
+    } catch { /* 저장 못 해도 이번에는 그대로 씀 */ }
+  }
+  return found;
+}
+
+// 결과 목록은 다시 그리지 않고(표지가 깜빡이지 않게) 카드의 플랫폼 아이콘만 바꾸고,
+// 원작 소설·웹툰판 카드는 원작 카드 바로 뒤에 끼워 넣음
+function refreshCards(group, touched) {
+  const box = $('s-results');
+  const cardOf = (g) => box.querySelector(`.s-item[data-key="${CSS.escape(g.key)}"]`);
+  let anchor = cardOf(group);
+  if (!anchor) return;
+  for (const g of touched) {
+    const card = cardOf(g);
+    if (card) {
+      card.querySelector('.pf-icons').innerHTML = groupPlatforms(g).map((p) => pfIconHTML(p)).join('');
+    } else if (passesFilters(g)) {
+      anchor.insertAdjacentHTML('afterend', searchCardHTML(g));
+      anchor = anchor.nextElementSibling;
+      cardObserver?.observe(anchor);
+    }
+  }
+}
+
+// 결과 목록에 보일 작품인지 (작품 찾기 조건 + 위쪽 필터) - renderSearchResults 와 같은 기준
+function passesFilters(g) {
+  const { finder, filter: f } = searchState;
+  const platformOf = (i) => SEARCH_SOURCES[i.source].platform;
+  const ongoing = mergeOngoing(g.items.map((i) => i.ongoing));
+  return (!finder || ((!finder.types.size || finder.types.has(mainItem(g).type)) &&
+      (!finder.platforms?.size || g.items.some((i) => finder.platforms.has(platformOf(i)))))) &&
+    (f.type === 'all' || mainItem(g).type === f.type) &&
+    (f.platform === 'all' || g.items.some((i) => platformOf(i) === f.platform)) &&
+    (f.ongoing === 'all' || (f.ongoing === '완결' ? /완결/.test(ongoing) : ongoing === f.ongoing));
+}
+
+// 화면에 보이는 결과 카드부터 다른 플랫폼 찾기 (한 번에 두 작품씩)
+let cardObserver = null;
+const lookupQueue = [];
+let lookupActive = 0;
+function watchCards() {
+  if (!searchState.finder || !('IntersectionObserver' in window)) return;
+  cardObserver ||= new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      cardObserver.unobserve(e.target);
+      const g = searchState.groups.get(e.target.dataset.key);
+      if (g && !g.lookup && !lookupQueue.includes(g)) lookupQueue.push(g);
+    }
+    pumpLookups();
+  }, { root: $('searchPage'), rootMargin: '0px 0px 200px 0px' });
+  cardObserver.disconnect();
+  lookupQueue.length = 0; // 목록을 새로 그리면 보이는 카드부터 다시
+  document.querySelectorAll('#s-results .s-card').forEach((c) => {
+    if (!searchState.groups.get(c.dataset.key)?.lookup) cardObserver.observe(c);
+  });
+}
+function pumpLookups() {
+  while (lookupActive < 2 && lookupQueue.length) {
+    const g = lookupQueue.shift();
+    if (searchState.groups.get(g.key) !== g || g.lookup) continue; // 그사이 다른 검색을 했거나 이미 찾음
+    lookupActive++;
+    addOtherPlatforms(g).catch(() => {}).finally(() => { lookupActive--; pumpLookups(); });
+  }
 }
 
 const isNovel = (type) => type === 'webnovel';
