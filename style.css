@@ -779,16 +779,20 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 .in-library { flex: none; align-self: flex-start; margin-top: 4px; font-size: 0.7rem; padding: 3px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-strong); }
 .s-more { width: 100%; padding: 12px; margin-top: 14px; font-weight: 400; }
 /* 카드형 결과 (장르별 검색·작품 찾기): 한 줄에 표지 3개 */
-.s-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 10px; margin-top: 10px; }
+.s-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; margin-top: 10px; }
 .s-item.s-card {
   display: flex; flex-direction: column; align-items: stretch; gap: 3px;
   padding: 0; border: none; min-width: 0;
 }
 .s-card-cover { position: relative; display: block; margin-bottom: 4px; }
 .s-card-cover img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; background: var(--surface-2); display: block; }
-.s-card-cover .in-library { position: absolute; left: 5px; top: 5px; margin: 0; }
-.s-item.s-card b { font-size: 0.86rem; line-height: 1.3; }
-.s-item.s-card small { font-size: 0.74rem; }
+.s-card-cover .in-library { position: absolute; left: 6px; bottom: 6px; margin: 0; }
+/* 표지 왼쪽 위 종류·플랫폼 배지 (플랫폼이 많으면 다음 줄로) */
+.s-card-cover .badges { top: 6px; left: 6px; right: 6px; flex-wrap: wrap; }
+.s-card-cover .badge { font-size: 0.64rem; padding: 1px 5px; }
+.s-card-cover .badge-pf { width: 18px; padding: 1px 0; }
+.s-item.s-card b { font-size: 0.92rem; line-height: 1.3; }
+.s-item.s-card small { font-size: 0.78rem; }
 .s-card .pf-icons { margin-top: 2px; }
 .s-card .pf-icons .pf-icon { width: 18px; height: 18px; font-size: 0.6rem; }
 /* 끝까지 내리면 저절로 더 불러올 때 보이는 작은 로딩 표시 */

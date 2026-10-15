@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 62;
+const APP_VERSION = 63;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -1229,12 +1229,21 @@ function searchCardHTML(g) {
     <button type="button" class="s-item s-card" data-key="${esc(g.key)}">
       <span class="s-card-cover">
         ${searchCoverHTML(g)}
+        ${searchBadgesHTML(g)}
         ${findInLibrary(g) ? '<span class="in-library">내 서재</span>' : ''}
       </span>
       <b>${esc(main.title)}</b>
-      <small>${esc(main.author || TYPES[main.type])}</small>
-      <span class="pf-icons">${groupPlatforms(g).map((p) => pfIconHTML(p)).join('')}</span>
+      <small>${esc(main.author || '')}</small>
     </button>`;
+}
+
+// 카드 표지 왼쪽 위: 종류 + 플랫폼 (서재 카드와 같은 모양, 검색은 어느 플랫폼인지가 중요해서 회사로 묶지 않고 플랫폼마다)
+function searchBadgesHTML(g) {
+  const pf = (name) => {
+    const icon = PLATFORM_ICONS.find((p) => p.match.test(name));
+    return `<span class="badge badge-pf pf-${icon?.cls || 'etc'}" title="${esc(name)}" aria-label="${esc(name)}">${icon?.letter || esc(name[0])}</span>`;
+  };
+  return `<span class="badges"><span class="badge">${esc(TYPES[mainItem(g).type] || '')}</span>${groupPlatforms(g).map(pf).join('')}</span>`;
 }
 
 // 끝까지 스크롤하면 저절로 다음 페이지 (맨 아래 표시가 화면 근처에 오면 불러옴)
@@ -2031,7 +2040,7 @@ function refreshCards(group, touched) {
   for (const g of touched) {
     const card = cardOf(g);
     if (card) {
-      card.querySelector('.pf-icons').innerHTML = groupPlatforms(g).map((p) => pfIconHTML(p)).join('');
+      card.querySelector('.badges').outerHTML = searchBadgesHTML(g);
     } else if (passesFilters(g)) {
       grid.insertAdjacentHTML('beforeend', searchCardHTML(g));
       cardObserver?.observe(grid.lastElementChild);
