@@ -1145,3 +1145,13 @@ dialog button:focus { outline: none; }
 .cover, .thumb, .cal-cover, .cal-fallback { background: #8e8e93; }
 .cover-fallback, .cal-fallback { color: transparent; }
 .s-item img:not([src]) { background: #8e8e93; }
+
+/* 작품 찾기 결과: 개수 + 오른쪽에 보는 순서 */
+.s-count-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0 2px; }
+.s-count-row .s-count { margin: 0; }
+.s-sort {
+  appearance: none; -webkit-appearance: none; border: none; background: none; padding: 4px 18px 4px 4px;
+  font: inherit; font-size: 0.82rem; color: var(--sub); cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right center; background-size: 14px;
+}

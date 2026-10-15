@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 71;
+const APP_VERSION = 73;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -1116,11 +1116,15 @@ async function searchPlatform(more = false, fromFinder = false) {
     return res;
   };
   const results = await Promise.allSettled(targets.map(run));
+  // 이미 받은 작품 (플랫폼:작품 번호) - 다음 페이지에 새 작품이 하나도 없으면 그 플랫폼은 끝으로 봄
+  // (네이버 시리즈 장르 목록은 마지막 페이지를 넘어가도 마지막 페이지를 계속 다시 줌)
+  const seen = new Set([...searchState.groups.values()].flatMap((g) => g.items.map((i) => `${i.source}:${i.sourceId}`)));
   results.forEach((res, i) => {
     const { source, page } = targets[i];
     if (res.status === 'fulfilled') {
+      const fresh = res.value.items.some((it) => !seen.has(`${source}:${it.sourceId}`));
       addToGroups(source, res.value.items);
-      searchState.pages[source] = { page, hasMore: res.value.hasMore && res.value.items.length > 0 };
+      searchState.pages[source] = { page, hasMore: res.value.hasMore && fresh };
     } else {
       searchState.failed.push(SEARCH_SOURCES[source].platform);
       // 더 보기에서 실패하면 다음에 같은 페이지를 다시 시도
@@ -1140,11 +1144,25 @@ function renderSearchResults() {
   const box = $('s-results');
   const { finder } = searchState;
   const qKey = titleKey(searchState.q);
-  const bestRank = (g) => Math.min(...g.items.map((i) => i.rank ?? 9999));
+  // 인기순: 플랫폼을 골랐으면 그 플랫폼 순위로 (순위가 없는 작품 - 다른 플랫폼 찾기로 붙은 것 - 은 뒤로)
+  const pickedPlatforms = searchState.filter.platform !== 'all' ? [searchState.filter.platform]
+    : finder?.platforms?.size ? [...finder.platforms] : null;
+  const rankItems = (g) => (pickedPlatforms
+    ? g.items.filter((i) => pickedPlatforms.some((p) => inFilterPlatform(SEARCH_SOURCES[i.source].platform, p)))
+    : g.items);
+  // (플랫폼을 골랐을 때는 그 플랫폼 목록에서 받은 순위만 - 원작·웹툰판 카드에 붙인 소수 순위는 빼고)
+  const bestRank = (g) => Math.min(9999, ...rankItems(g).map((i) => (pickedPlatforms
+    ? (Number.isInteger(i.rank) ? i.rank : 9999)
+    : i.rank ?? 9999)));
   // 순서: 제목이 검색어와 똑같은 작품 → 여러 플랫폼에 있는 작품 → 대표 플랫폼 순서 → 처음 나온 순서
   // (작품 찾기는 플랫폼 목록 순서를 섞어서: 각 플랫폼 1번째끼리 → 2번째끼리 …)
+  // 작품 찾기 보는 순서: 인기순(기본) / 플랫폼 많은 순 / 제목순
+  const sort = searchState.sort || 'rank';
+  const byRank = (a, b) => bestRank(a) - bestRank(b) || sourceRank(mainItem(a).source) - sourceRank(mainItem(b).source);
   let all = [...searchState.groups.values()].sort(finder
-    ? (a, b) => bestRank(a) - bestRank(b) || sourceRank(mainItem(a).source) - sourceRank(mainItem(b).source)
+    ? (sort === 'title' ? (a, b) => mainItem(a).title.localeCompare(mainItem(b).title, 'ko')
+      : sort === 'platforms' ? (a, b) => groupPlatforms(b).length - groupPlatforms(a).length || byRank(a, b)
+      : byRank)
     : (a, b) =>
       (titleKey(mainItem(b).title) === qKey) - (titleKey(mainItem(a).title) === qKey) ||
       b.items.length - a.items.length ||
@@ -1197,7 +1215,11 @@ function renderSearchResults() {
   const itemHTML = finder ? searchCardHTML : searchRowHTML;
   const list = groups.map(itemHTML).join('');
   // 다시 그려도 이미 화면에 있던 표지 그림은 그대로 옮겨 씀 (표지가 깜빡이지 않게)
-  setHTMLKeepImages(box, filters + `<p class="s-count">${esc(countLabel)} ${groups.length}${hasMore ? '+' : ''}</p>`
+  const sortHTML = finder ? `
+    <select class="s-sort" aria-label="보는 순서">
+      ${Object.entries(FINDER_SORTS).map(([v, label]) => `<option value="${v}"${v === sort ? ' selected' : ''}>${label}</option>`).join('')}
+    </select>` : '';
+  setHTMLKeepImages(box, filters + `<div class="s-count-row"><p class="s-count">${esc(countLabel)} ${groups.length}${hasMore ? '+' : ''}</p>${sortHTML}</div>`
     + (groups.length ? '' : '<p class="msg no-match">조건에 맞는 작품이 없어요.</p>')
     + (finder ? `<div class="s-grid">${list}</div>` : list) + failed
     // 작품 찾기에서 플랫폼을 골랐으면 아직 다른 플랫폼을 안 찾아본 작품도 찾는 중이라고 표시
@@ -1335,6 +1357,7 @@ const FINDER_GENRES = [
     mbToon: 'webtoon/genre/bl', mbComic: MB_COMIC('BL', '22'), mbNovel: 'novel/genre/bl/' },
 ];
 const FINDER_PLATFORMS = ['네이버', '카카오페이지', '카카오웹툰', '미스터블루', '레진코믹스'];
+const FINDER_SORTS = { rank: '인기순', platforms: '플랫폼 많은 순', title: '제목순' };
 // 플랫폼 고르는 버튼 순서
 const FILTER_ORDER = ['네이버', '카카오페이지', '카카오웹툰', '미스터블루', '레진코믹스'];
 
@@ -2830,6 +2853,12 @@ function bindEvents() {
     if (word) runSearch(word.dataset.q);
     if (e.target.closest('#recentClear')) { saveRecentSearches([]); showSearchIntro(); }
     if (e.target.closest('#manualAdd')) openEditor(null);
+  });
+  // 작품 찾기 결과 보는 순서
+  $('s-results').addEventListener('change', (e) => {
+    if (!e.target.matches('.s-sort')) return;
+    searchState.sort = e.target.value;
+    renderSearchResults();
   });
   $('s-results').addEventListener('click', (e) => {
     if (e.target.closest('#s-more')) { searchPlatform(true); return; }
