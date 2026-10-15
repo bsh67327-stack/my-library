@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 61;
+const APP_VERSION = 62;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -1159,8 +1159,9 @@ function renderSearchResults() {
   const f = searchState.filter;
   const platformOf = (i) => SEARCH_SOURCES[i.source].platform;
   const typesIn = Object.keys(TYPES).filter((t) => all.some((g) => mainItem(g).type === t));
-  const platformsIn = [...new Set(ALL_SOURCES.map((s) => SEARCH_SOURCES[s].platform))]
-    .filter((p) => all.some((g) => g.items.some((i) => platformOf(i) === p)));
+  // 작품 찾기는 다른 플랫폼을 나중에 찾아 붙이니까 처음부터 모든 플랫폼 버튼을 보여줌
+  const platformsIn = [...new Set(SEARCH_TARGETS.map((s) => SEARCH_SOURCES[s].platform))]
+    .filter((p) => finder || all.some((g) => g.items.some((i) => platformOf(i) === p)));
   const chip = (kind, value, label) =>
     `<button type="button" class="f-chip${f[kind] === value ? ' active' : ''}" data-filter="${kind}" data-value="${esc(value)}">${esc(label)}</button>`;
   const filters = `
@@ -1182,8 +1183,12 @@ function renderSearchResults() {
   const list = groups.map(itemHTML).join('');
   // 다시 그려도 이미 화면에 있던 표지 그림은 그대로 옮겨 씀 (표지가 깜빡이지 않게)
   setHTMLKeepImages(box, filters + `<p class="s-count">${esc(countLabel)} ${groups.length}${hasMore ? '+' : ''}</p>`
-    + (groups.length ? '' : '<p class="msg">조건에 맞는 작품이 없어요.</p>')
-    + (finder ? `<div class="s-grid">${list}</div>` : list) + failed + (!hasMore
+    + (groups.length ? '' : '<p class="msg no-match">조건에 맞는 작품이 없어요.</p>')
+    + (finder ? `<div class="s-grid">${list}</div>` : list) + failed
+    // 작품 찾기에서 플랫폼을 골랐으면 아직 다른 플랫폼을 안 찾아본 작품도 찾는 중이라고 표시
+    + (finder && f.platform !== 'all' && all.some((g) => !g.done)
+      ? '<p id="lookingNote" class="msg"><span class="spinner small"></span> 다른 플랫폼에서도 찾는 중…</p>' : '')
+    + (!hasMore
     ? `<p class="msg">${finder ? '작품을 모두 봤어요.' : '검색 결과를 모두 봤어요.'}</p>`
     : searchState.moreFailed || searchState.moreIdle
       // 이어서 불러오기가 실패했거나 보이는 작품이 안 늘었으면 저절로 다시 부르지 않고 버튼으로
@@ -1975,6 +1980,7 @@ function addOtherPlatforms(group) {
         if (!touched.includes(other)) touched.push(other);
       }
     }
+    group.done = true;
     if (searchState.finder && searchState.groups.get(group.key) === group) refreshCards(group, touched);
   })();
   return group.lookup;
@@ -2021,7 +2027,7 @@ function refreshCards(group, touched) {
   const box = $('s-results');
   const grid = box.querySelector('.s-grid');
   const cardOf = (g) => box.querySelector(`.s-item[data-key="${CSS.escape(g.key)}"]`);
-  if (!grid || !cardOf(group)) return;
+  if (!grid) return;
   for (const g of touched) {
     const card = cardOf(g);
     if (card) {
@@ -2029,6 +2035,9 @@ function refreshCards(group, touched) {
     } else if (passesFilters(g)) {
       grid.insertAdjacentHTML('beforeend', searchCardHTML(g));
       cardObserver?.observe(grid.lastElementChild);
+      box.querySelector('.no-match')?.remove();
+      const count = box.querySelector('.s-count');
+      if (count) count.textContent = count.textContent.replace(/\d+(\+?)$/, (m, plus) => `${grid.children.length}${plus}`);
     }
   }
 }
@@ -2068,6 +2077,11 @@ function watchCards() {
   document.querySelectorAll('#s-results .s-card').forEach((c) => {
     if (!searchState.groups.get(c.dataset.key)?.lookup) cardObserver.observe(c);
   });
+  // 플랫폼을 골랐으면 화면에 안 보이는(그 플랫폼이 아직 안 붙은) 작품도 전부 차례로 찾음
+  if (searchState.filter.platform !== 'all') {
+    for (const g of searchState.groups.values()) if (!g.lookup && !lookupQueue.includes(g)) lookupQueue.push(g);
+    pumpLookups();
+  }
 }
 function pumpLookups() {
   while (lookupActive < 2 && lookupQueue.length) {
@@ -2075,6 +2089,14 @@ function pumpLookups() {
     if (searchState.groups.get(g.key) !== g || g.lookup) continue; // 그사이 다른 검색을 했거나 이미 찾음
     lookupActive++;
     addOtherPlatforms(g).catch(() => {}).finally(() => { lookupActive--; pumpLookups(); });
+  }
+  // 다 찾았으면 "찾는 중" 표시를 지움
+  if (!lookupActive && !lookupQueue.length) {
+    $('lookingNote')?.remove();
+    const box = $('s-results');
+    if (searchState.finder && !box.querySelector('.s-card') && !box.querySelector('.no-match')) {
+      box.querySelector('.s-grid')?.insertAdjacentHTML('afterend', '<p class="msg no-match">조건에 맞는 작품이 없어요.</p>');
+    }
   }
 }
 
