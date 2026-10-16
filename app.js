@@ -22,7 +22,7 @@ async function fixSavedManga() {
 const STATUSES = { reading: '보는 중', done: '완독', paused: '보류', dropped: '하차' };
 
 // 앱 버전 (홈 화면 제목 옆에 작게 표시 - index.html의 ?v= 숫자와 맞춰 주세요)
-const APP_VERSION = 74;
+const APP_VERSION = 76;
 
 // 작품 검색 중계 서버 주소 (Cloudflare Worker를 만든 뒤 여기에 붙여넣기)
 const SEARCH_SERVER = 'https://my-library-search.bsh67327.workers.dev/';
@@ -257,7 +257,7 @@ function render() {
   const empty = $('empty');
   empty.hidden = list.length > 0;
   empty.innerHTML = works.length === 0
-    ? '아직 기록한 작품이 없어요.<br>오른쪽 아래 <b>＋</b> 버튼으로 첫 작품을 추가해 보세요!'
+    ? '아직 기록한 작품이 없어요.<br>오른쪽 위 <b class="accent">＋</b> 버튼으로 첫 작품을 추가해 보세요!'
     : '조건에 맞는 작품이 없어요.';
 
   $('appVersion').textContent = `v${APP_VERSION}`;
@@ -627,7 +627,8 @@ function setViewMode(mode) {
   $('feedView').hidden = mode !== 'feed';
   $('calendarView').hidden = mode !== 'calendar';
   $('settingsView').hidden = mode !== 'settings';
-  $('addBtn').hidden = mode === 'settings' || mode === 'home'; // 홈(검색창이 있음)·설정에는 ＋ 버튼이 필요 없음
+  // 홈(검색창이 있음)·설정에는 ＋ 버튼이 필요 없고, 서재는 제목 줄 오른쪽의 ＋(libAdd)를 씀
+  $('addBtn').hidden = mode === 'settings' || mode === 'home' || mode === 'library';
   if (mode === 'settings') renderSettings();
   if (mode === 'calendar') {
     // 오늘 추가한 작품이 있으면 오늘을 선택해서 보여줌
@@ -1223,7 +1224,7 @@ function renderSearchResults() {
     + (groups.length ? '' : '<p class="msg no-match">조건에 맞는 작품이 없어요.</p>')
     + (finder ? `<div class="s-grid">${list}</div>` : list) + failed
     + (!hasMore
-    ? `<p class="msg">${finder ? '작품을 모두 봤어요.' : '검색 결과를 모두 봤어요.'}</p>`
+    ? (finder ? '' : '<p class="msg">검색 결과를 모두 봤어요.</p>') // 작품 찾기는 끝나도 문구 없음
     : searchState.moreFailed || searchState.moreIdle
       // 이어서 불러오기가 실패했거나 보이는 작품이 안 늘었으면 저절로 다시 부르지 않고 버튼으로
       ? `<button type="button" id="s-more" class="ghost s-more">${searchState.moreFailed ? '다시 불러오기' : '더 불러오기'}</button>`
@@ -2225,6 +2226,31 @@ async function fillMissingInfo(w) {
 // 작품 정보 화면 그리기
 // 표지 부분은 바뀔 때만 다시 그림 (+1 / 별점을 누를 때마다 표지가 깜빡이지 않게)
 let lastHero = '';
+// 작품 소개: 줄마다 나눠서 (빈 줄은 줄로 세지 않고 작은 틈으로) - 12줄이 넘으면 clampDesc 가 "더보기"로 접음
+const DESC_LINES = 12;
+function descHTML(desc) {
+  const lines = String(desc || '').split('\n').map((l) => l.trim() ? `<span class="dl">${esc(l)}</span>` : '<span class="dgap"></span>');
+  return `<div id="detailDesc" class="detail-desc">${lines.join('')}</div>
+    <button type="button" id="descMore" class="desc-more" hidden>더보기</button>`;
+}
+// 화면에 그려진 줄 수(긴 줄이 두 줄로 넘어가면 두 줄)로 12줄까지만 보이게
+function clampDesc() {
+  const box = $('detailDesc');
+  if (!box || detailState?.descOpen || !box.offsetParent) return; // 안 보일 때는 줄 수를 잴 수 없음
+  const lh = parseFloat(getComputedStyle(box).lineHeight) || 24;
+  let count = 0;
+  for (const el of box.querySelectorAll('.dl')) {
+    const n = Math.max(1, Math.round(el.offsetHeight / lh));
+    if (count + n > DESC_LINES) {
+      box.style.maxHeight = `${el.offsetTop - box.offsetTop + (DESC_LINES - count) * lh}px`;
+      box.classList.add('clamped');
+      $('descMore').hidden = false;
+      return;
+    }
+    count += n;
+  }
+}
+
 function renderDetail() {
   if (!detailState) return;
   const mine = detailState.workId ? works.find((w) => w.id === detailState.workId) : null;
@@ -2242,6 +2268,7 @@ function renderDetail() {
     lastHero = hero;
   }
   $('detailBody').innerHTML = detailHTML(w, mine);
+  requestAnimationFrame(clampDesc); // 화면이 열린 다음에 줄 수를 잼
 }
 
 function heroHTML(w) {
@@ -2290,7 +2317,7 @@ function detailHTML(w, mine) {
     ${w.desc ? `
       <div class="detail-sec">
         <h3>작품 소개</h3>
-        <p class="detail-desc">${esc(w.desc)}</p>
+        ${descHTML(w.desc)}
       </div>` : w.loginOnly ? `
       <div class="detail-sec">
         <h3>작품 소개</h3>
@@ -2818,6 +2845,7 @@ function bindEvents() {
   $('kwForm').addEventListener('submit', (e) => { e.preventDefault(); $('kwFilter').blur(); });
   // ＋ 버튼: 피드에서는 한줄평 쓰기, 나머지 화면에서는 작품 검색
   $('addBtn').addEventListener('click', () => (view.mode === 'feed' ? openReviewPage() : openSearch()));
+  $('libAdd').addEventListener('click', () => openSearch());
 
   // 검색 화면
   $('searchBack').addEventListener('click', closeOverlay);
@@ -2880,6 +2908,15 @@ function bindEvents() {
   $('detailBody').addEventListener('click', async (e) => {
     const id = detailState?.workId;
     if (e.target.closest('#detailAdd')) { addFromGroup(detailState.group, detailState.info); return; }
+    // 작품 소개 더보기 (펼친 상태는 다시 그려도 유지)
+    if (e.target.closest('#descMore')) {
+      detailState.descOpen = true;
+      const box = $('detailDesc');
+      box.style.maxHeight = '';
+      box.classList.remove('clamped');
+      e.target.closest('#descMore').hidden = true;
+      return;
+    }
     // 같은 제목의 다른 형태 작품 정보로 바꿔 보기
     const otherForm = e.target.closest('[data-other-form]');
     if (otherForm) {

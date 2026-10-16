@@ -17,7 +17,7 @@
   <!-- ?v=숫자: 파일을 고칠 때마다 올려서, 폰이 예전 파일을 쓰지 않게 함 -->
   <!-- 글꼴: Pretendard -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="style.css?v=74">
+  <link rel="stylesheet" href="style.css?v=76">
 </head>
 <body>
   <main>
@@ -57,6 +57,10 @@
     <section id="libraryView" hidden>
       <header class="page-head">
         <h1>서재 <span id="libCount" class="count"></span></h1>
+        <!-- 작품 검색해서 서재에 담기 (서재에서는 아래 둥근 + 대신 여기) -->
+        <button type="button" id="libAdd" class="head-add" aria-label="작품 검색해서 추가">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
       </header>
 
       <!-- 검색 / 필터 (스크롤해도 화면 위에 붙어 있음) -->
@@ -454,6 +458,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=74"></script>
+  <script src="app.js?v=76"></script>
 </body>
 </html>

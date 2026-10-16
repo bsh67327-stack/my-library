@@ -897,7 +897,7 @@ button.chip.chip-word { padding: 7px 14px; border: 1px solid var(--border); back
 .detail-sec .wide { margin-top: 18px; }
 .detail-note { margin: 22px 20px 0; font-size: 0.72rem; color: var(--muted); text-align: center; line-height: 1.5; }
 .detail-source { margin: 6px 20px 0; font-size: 0.66rem; color: var(--muted); text-align: center; line-height: 1.6; }
-.detail-desc { font-size: 0.92rem; line-height: 1.7; color: var(--sub); white-space: pre-line; word-break: keep-all; }
+.detail-desc { font-size: 0.92rem; line-height: 1.7; color: var(--sub); word-break: keep-all; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag { padding: 5px 10px; border-radius: 8px; background: var(--surface-2); font-size: 0.8rem; color: var(--sub); }
 .detail-tools { display: flex; justify-content: center; gap: 18px; margin-top: 26px; }
@@ -1155,3 +1155,19 @@ dialog button:focus { outline: none; }
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right center; background-size: 14px;
 }
+
+/* 작품 소개: 줄마다, 빈 줄은 작은 틈 / 12줄이 넘으면 접고 아래로 갈수록 흐리게 + 더보기 */
+.detail-desc .dl { display: block; }
+.detail-desc .dgap { display: block; height: 0.6em; }
+.detail-desc.clamped { overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.desc-more { display: block; margin: 6px auto 0; padding: 6px 14px; border: none; background: none; color: var(--muted); font-size: 0.86rem; }
+.desc-more[hidden] { display: none; }
+/* 마지막 본 회차 칸: 가로 폭 줄임 */
+#detailPage .progress-row .stepper button { width: 30px; height: 36px; font-size: 1.15rem; }
+#detailPage .progress-row .stepper input { width: 44px; padding: 6px 0; }
+
+/* 서재 제목 줄 오른쪽: 주황색 + (배경 없이) */
+.head-add { display: grid; place-items: center; width: 40px; height: 40px; margin-right: -8px; padding: 0; border: none; background: none; color: var(--accent); }
+.head-add svg { width: 26px; height: 26px; }
+
+.hint b.accent { color: var(--accent); }
